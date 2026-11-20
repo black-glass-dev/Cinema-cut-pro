@@ -176,3 +176,10 @@ Failed / root cause → rule: APK build and publication were skipped because the
 Evidence: https://github.com/black-glass-dev/Cinema-cut-pro/actions/runs/44728680261 — compile/JVM and native/FFmpeg steps PASS; APK steps SKIPPED.
 Remaining: no APK for this redesign yet; UI runtime and physical-phone comparison are UNVERIFIED and reserved for user handset testing.
 Next: use a tiny, accurate worklog-only marked commit to trigger the workflow's approved APK release, then verify release metadata and SHA-256.
+
+## 2026-10-10 — Timeline redesign APK handoff
+Done: approved test release #101 published after all CI gates passed on `d15e321` (workflow 44729598621).
+Failed / root cause → rule: none in this run; the earlier `94a4d5f` compile failure was fixed at `fa4702a` with the missing Compose import.
+Evidence: workflow https://github.com/black-glass-dev/Cinema-cut-pro/actions/runs/44729598621; release https://github.com/black-glass-dev/Cinema-cut-pro/releases/tag/android-test-101-1; APK `Cinema-Cut-Pro-debug-101-1.apk`, 89,827,481 bytes, SHA-256 `094c1682b95c29d17fb79e947672df9bd66c15bd73b2bf5f94dddfcb7603156f`.
+Remaining: device screenshot comparison, import-to-clip rendering, gestures, playhead/scrub and visual match on a physical phone are UNVERIFIED; user will perform handset checks.
+Next: install the APK on the handset and compare Timeline against `docs/design-reference/CinemaCutPro_Editor_Toolbar.png`; report any mismatches or gesture regressions for follow-up.

@@ -245,7 +245,9 @@ class Media3TransformerBackendExportValidationTest {
     @Test
     fun mcrawExportIsBlockedWhenRawFrameWouldExceedMemoryBound() {
         val raw = mcrawAsset("raw-too-large")
-        val source = raw.copy(metadata = raw.metadata.copy(width = 6000, height = 4000))
+        // 6200x4200 = 26.04 megapixels, strictly above the 24-megapixel memory bound enforced
+        // by both the validator and the MotionCam transcoder's own runtime guard.
+        val source = raw.copy(metadata = raw.metadata.copy(width = 6200, height = 4200))
         val project = project(listOf(source), listOf(clip("clip", source.assetId, 0L)))
         val backend = Media3TransformerBackend(applicationContext, CodecProbe())
 

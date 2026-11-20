@@ -102,6 +102,12 @@ jobs:
               test_failures.append(f"Gradle reported failing tests, but no JUnit failure entries were parsed. XML reports found: {report_names}")
 
           report = "Gradle build failure details:\n\n```text\n" + "\n".join(excerpt) + "\n```\n"
+          # Emit one annotation per compiler error so every error is retrievable via the API.
+          for error_line in [line for line in lines if line.lstrip().startswith("e: ")]:
+              error_text = error_line.replace(
+                  "file:///home/runner/work/Cinema-cut-pro/Cinema-cut-pro/", ""
+              ).replace("%", "%25").replace("\r", "%0D").replace("\n", " ")
+              print(f"::error title=Kotlin compile error::{error_text[:800]}")
           if test_failures:
               report += "\nJUnit test failures:\n\n```text\n" + "\n\n".join(test_failures[:20]) + "\n```\n"
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:

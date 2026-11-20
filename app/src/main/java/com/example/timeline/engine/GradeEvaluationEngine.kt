@@ -2,6 +2,7 @@ package com.example.timeline.engine
 
 import com.example.model.adjustments.AdjustmentStack
 import com.example.model.adjustments.VideoAdjustmentParams
+import com.example.timeline.core.TimelineClip
 import com.example.timeline.core.TimelineProject
 import com.example.timeline.engine.preview.TimelineFrameResolver
 

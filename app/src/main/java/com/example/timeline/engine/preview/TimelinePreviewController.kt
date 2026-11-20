@@ -406,7 +406,8 @@ class TimelinePreviewController(private val context: Context) {
         if (sourcePosition == null) {
             activePreviewSource = null
             _activeSourceIsProxy.value = false
-            if (previewEngine is Media3FallbackPreviewEngine) previewEngine.clearMedia()
+            val engine = previewEngine
+            if (engine is Media3FallbackPreviewEngine) engine.clearMedia()
             return
         }
         val sourcePositionUs = sourcePosition

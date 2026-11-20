@@ -78,7 +78,7 @@ object ColorGradeAdjustmentMapper {
         val lutId = if (incomingHasLut) overlay.lutId else base.lutId
         val lutIntensity = when {
             !incomingHasLut -> base.lutIntensity
-            base.lutId == overlay.lutId -> mix(base.lutIntensity, overlay.lutIntensity, amount)
+            base.lutId == overlay.lutId -> mix(base.lutIntensity, overlay.lutIntensity)
             else -> overlay.lutIntensity * amount
         }.coerceIn(0f, 1f)
 

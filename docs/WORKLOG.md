@@ -138,6 +138,13 @@ Next: user runs the device checklist and reports results; fix anything the devic
 ## 2026-10-10 — Timeline playhead interaction diagnosis and fix
 Done: aligned ruler/playhead/virtualization to the timeline viewport after the 80 dp track header; made the visible playhead line a scrub hit target over clips; clamped scrubbing to the sequence end; coalesced Media3 paused seeks to frame-responsive cadence.
 Failed / root cause → rule: the overlay's x-origin ignored the track-header column, while track-area drags were classified as clip edits and every playhead emission forced a decoder seek; align overlay and content coordinate spaces, prioritize cursor hit-testing, and avoid forced seeks for each pointer tick.
-Evidence: regression tests added for both gesture controllers, sequence bounds, and Media3 seek policy; `git diff --check` passed. Kotlin/JVM tests and Android build are not run yet (no local JDK/SDK); CI is the next compile/test gate.
-Remaining: Kotlin/JVM/Compose compilation and test execution, native CI gate, and handset drag/scrub verification remain UNVERIFIED/BLOCKED; clip edit bounds still rely on Core v2 validation.
-Next: push this checkpoint through the existing CI workflow, fix any compiler/test findings, then publish a fresh APK only from a fully passing run for the user's device pass.
+Evidence: run 44719380177 passed `compileDebugKotlin`, `externalNativeBuildDebug`, full `testDebugUnitTest`, native export tests, FFmpeg output validation, license verification, and `assembleDebug`; release `android-test-94-1` is a 89,827,481-byte APK. SHA-256: `9e28ad97bb78b8292b2b9701b210a88aa6eb41714ab0f72241e39fb820190bff`. Regression tests for both gesture controllers, sequence bounds, and Media3 seek policy passed in the JVM suite; standalone `python3 tools/run_native_export_tests.py` passed here too.
+Remaining: handset drag/scrub verification remains UNVERIFIED; clip edit bounds still rely on Core v2 validation and handset proof.
+Next: user can test the fresh APK while source-side MOV/error fallback work continues; apply any reported findings without waiting on device results.
+
+## MOV unsupported-source fallback (source change pending CI)
+Done: added a guarded Media3 `UNSUPPORTED_MEDIA` → bundled FFmpeg fallback when auto-fallback is enabled; bypassed proxy/effect failures and active color-grading sessions, and prevent one-time fallback from looping back to Media3.
+Failed / root cause → rule: current fallback handled native-to-Media3 only, leaving a Media3 container/codec rejection on the default route without an alternate decoder; only pivot on structured unsupported-source errors, not generic playback or shader errors.
+Evidence: pure routing regression cases added for accepted/rejected transitions; `git diff --check` and standalone native export tests passed, but this Kotlin change awaits CI compilation/JVM tests.
+Remaining: specific handset MOV codec/runtime remains UNVERIFIED; FFmpeg color-grade capability is limited, so the route is suppressed while the Color workspace is active.
+Next: run Android/JVM CI, fix any failures, then user may verify MOV playback using the newly published test APK.

@@ -44,6 +44,50 @@ class PreviewEngineRoutingTest {
     }
 
     @Test
+    fun unsupportedOriginalMediaCanUseFfmpegButEffectsAndProxyFailuresCannot() {
+        assertEquals(true, shouldFallbackToFfmpegForUnsupportedSource(
+            engineType = PreviewEngineType.MEDIA3_FALLBACK,
+            failureCategory = PreviewPlaybackFailureCategory.UNSUPPORTED_MEDIA,
+            autoFallbackEnabled = true,
+            isProxySource = false,
+            colorGradingPreviewActive = false,
+            fallbackAlreadyAttempted = false
+        ))
+        assertEquals(false, shouldFallbackToFfmpegForUnsupportedSource(
+            engineType = PreviewEngineType.MEDIA3_FALLBACK,
+            failureCategory = PreviewPlaybackFailureCategory.UNSUPPORTED_MEDIA,
+            autoFallbackEnabled = true,
+            isProxySource = true,
+            colorGradingPreviewActive = false,
+            fallbackAlreadyAttempted = false
+        ))
+        assertEquals(false, shouldFallbackToFfmpegForUnsupportedSource(
+            engineType = PreviewEngineType.MEDIA3_FALLBACK,
+            failureCategory = PreviewPlaybackFailureCategory.DECODER,
+            autoFallbackEnabled = true,
+            isProxySource = false,
+            colorGradingPreviewActive = false,
+            fallbackAlreadyAttempted = false
+        ))
+        assertEquals(false, shouldFallbackToFfmpegForUnsupportedSource(
+            engineType = PreviewEngineType.MEDIA3_FALLBACK,
+            failureCategory = PreviewPlaybackFailureCategory.UNSUPPORTED_MEDIA,
+            autoFallbackEnabled = true,
+            isProxySource = false,
+            colorGradingPreviewActive = true,
+            fallbackAlreadyAttempted = false
+        ))
+        assertEquals(false, shouldFallbackToFfmpegForUnsupportedSource(
+            engineType = PreviewEngineType.MEDIA3_FALLBACK,
+            failureCategory = PreviewPlaybackFailureCategory.UNSUPPORTED_MEDIA,
+            autoFallbackEnabled = true,
+            isProxySource = false,
+            colorGradingPreviewActive = false,
+            fallbackAlreadyAttempted = true
+        ))
+    }
+
+    @Test
     fun liveGradeFallbackUsesTheRequestedEngineNotTheTemporaryActiveEngine() {
         assertEquals(true, requiresMedia3ForLiveGrade(PreviewEngineType.VLC_NATIVE, isMotionCamRaw = false))
         assertEquals(true, requiresMedia3ForLiveGrade(PreviewEngineType.FFMPEG_NATIVE, isMotionCamRaw = false))

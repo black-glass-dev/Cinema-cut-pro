@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.example.timeline.ui.TimelineUiState
 import com.example.timeline.engine.preview.TimelinePreviewController
+import com.example.timeline.engine.preview.shouldFallbackToFfmpegForUnsupportedSource
 import com.example.timeline.engine.preview.shouldGenerateAdaptiveProxy
 import com.example.timeline.ui.TimelineViewModel
 import com.example.ui.editor.viewport.*
@@ -57,6 +58,7 @@ fun VideoViewportSection(
     }
     val media3Metrics by media3MetricsFlow.collectAsState()
     val automaticProxyRequests = remember(project.id) { mutableSetOf<String>() }
+    val attemptedFfmpegFallbackAssets = remember(project.id) { mutableSetOf<String>() }
     val latestIsPlaying by rememberUpdatedState(isPlaying)
     
 
@@ -136,7 +138,9 @@ fun VideoViewportSection(
         onDispose { timelinePreviewController.onPlaybackEnded = null }
     }
 
-    var handledPlaybackError by remember { mutableStateOf<Pair<com.example.timeline.engine.preview.PreviewEngineType, String>?>(null) }
+    var handledPlaybackError by remember {
+        mutableStateOf<Triple<com.example.timeline.engine.preview.PreviewEngineType, String, com.example.timeline.engine.preview.PreviewPlaybackFailureCategory?>?>(null)
+    }
     LaunchedEffect(
         currentAsset?.assetId,
         playerError,
@@ -152,7 +156,7 @@ fun VideoViewportSection(
             handledPlaybackError = null
             return@LaunchedEffect
         }
-        val errorKey = engineType to error
+        val errorKey = Triple(engineType, error, playbackFailure?.category)
         if (handledPlaybackError == errorKey) return@LaunchedEffect
         handledPlaybackError = errorKey
 
@@ -165,14 +169,32 @@ fun VideoViewportSection(
             timelineViewModel.markAssetProxyPlaybackFailed(asset.assetId)
         }
 
+        val shouldTryFfmpeg = asset != null && !fellBackFromProxy && shouldFallbackToFfmpegForUnsupportedSource(
+            engineType = engineType,
+            failureCategory = playbackFailure?.category,
+            autoFallbackEnabled = previewSettings.autoFallbackOnFailure,
+            isProxySource = activeSourceIsProxy,
+            colorGradingPreviewActive = colorGradingPreviewActive,
+            fallbackAlreadyAttempted = asset.assetId in attemptedFfmpegFallbackAssets
+        )
         val isFallbackEngine = engineType == com.example.timeline.engine.preview.PreviewEngineType.FFMPEG_NATIVE ||
             engineType == com.example.timeline.engine.preview.PreviewEngineType.VLC_NATIVE
-        if (isFallbackEngine && previewSettings.autoFallbackOnFailure) {
-            timelinePreviewController.setEngineType(com.example.timeline.engine.preview.PreviewEngineType.MEDIA3_FALLBACK)
-            editorViewModel.updateSelectedEngine(com.example.timeline.engine.preview.PreviewEngineType.MEDIA3_FALLBACK)
-            if (isPlaying) timelinePreviewController.play()
-        } else if (asset != null && !fellBackFromProxy && shouldRecordSourceFailure) {
-            timelineViewModel.markAssetPlaybackFailed(asset.assetId)
+        val nativeFallbackWasAlreadyTried = asset?.assetId?.let(attemptedFfmpegFallbackAssets::contains) == true
+        when {
+            shouldTryFfmpeg && asset != null -> {
+                attemptedFfmpegFallbackAssets += asset.assetId
+                timelinePreviewController.setEngineType(com.example.timeline.engine.preview.PreviewEngineType.FFMPEG_NATIVE)
+                editorViewModel.updateSelectedEngine(com.example.timeline.engine.preview.PreviewEngineType.FFMPEG_NATIVE)
+                if (isPlaying) timelinePreviewController.play()
+            }
+            isFallbackEngine && previewSettings.autoFallbackOnFailure && !nativeFallbackWasAlreadyTried -> {
+                timelinePreviewController.setEngineType(com.example.timeline.engine.preview.PreviewEngineType.MEDIA3_FALLBACK)
+                editorViewModel.updateSelectedEngine(com.example.timeline.engine.preview.PreviewEngineType.MEDIA3_FALLBACK)
+                if (isPlaying) timelinePreviewController.play()
+            }
+            asset != null && !fellBackFromProxy && shouldRecordSourceFailure -> {
+                timelineViewModel.markAssetPlaybackFailed(asset.assetId)
+            }
         }
     }
 

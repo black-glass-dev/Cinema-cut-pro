@@ -210,3 +210,10 @@ Done: serialized async media imports to preserve both selected MP4s and clip/his
 Evidence: `./tools/run_timeline_core_tests.sh` PASS (170,624 assertions); `python3 tools/run_native_export_tests.py` PASS; brand ZIP integrity PASS; added JVM validation cases for two sequential MP4s and split/trimmed clips.
 Status: exact multi-import, split/trim export tests and Android compile are UNVERIFIED because this environment has no Java runtime; physical-device gestures/export are also UNVERIFIED. Color grading remains deferred.
 Next: run Android CI on this focused commit, fix any compile/test failures, then ask for device verification of multi-import, trim edges, playhead placement, and real MP4 exports.
+
+## 2026-10-10 — Timeline/import/export CI verification
+Done: fixed the first CI compile miss (an explicit `TimelineFrameMath` import) in `a77017c`; the follow-up Android compile and JVM suite passed.
+Failed / root cause → rule: run `44757248643` caught the omitted import before tests; do not treat the preceding host-only passes as Kotlin verification.
+Evidence: run `44758484403` PASS for Kotlin/native compilation, JVM tests (including new two-MP4 and split/trim validation cases), native export tests, and FFmpeg checks; timeline host suite (170,624 assertions), native export suite, and asset/XML integrity also PASS.
+Remaining: the push workflow intentionally skipped APK publication; physical-device gestures and real media import/export remain UNVERIFIED. Color grading stays deferred.
+Next: publish an approved debug test APK from this passing head, then request handset checks for two-video import/export, split/trim export, edge clamps, and playhead placement.

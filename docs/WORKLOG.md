@@ -215,4 +215,4 @@ Next: run Android CI on this focused commit, fix any compile/test failures, then
 Done: fixed the first CI compile miss (an explicit `TimelineFrameMath` import) in `a77017c`; the follow-up Android compile and JVM suite passed.
 Evidence: run `44757248643` caught the omitted import before tests; run `44758484403` PASS for Kotlin/native compilation, JVM tests (including new two-MP4 and split/trim validation cases), native export tests, and FFmpeg checks; timeline host suite (170,624 assertions) and asset/XML integrity also PASS.
 Remaining: the push workflow intentionally skipped APK publication; physical-device gestures and real media import/export remain UNVERIFIED. Color grading stays deferred.
-Next: publish an approved debug test APK from this passing head, then request handset checks for two-video import/export, split/trim export, edge clamps, and playhead placement.
+Next: workflow-dispatch was denied (HTTP 403); request the approved debug APK through the documented marked-push path, then request handset checks for multi-video/export and timeline gestures.

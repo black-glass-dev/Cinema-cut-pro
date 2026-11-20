@@ -162,3 +162,10 @@ Failed / root cause → rule: the existing view used a blue/sprocket clip card, 
 Evidence: source-level review and `git diff --check` only; Android/JVM compile, screenshot rendering and handset comparison remain pending. Screenshot preserved as a 2 MB repo asset.
 Remaining: visual rendering, touch-target feel, and scrubbing/trim behavior on a physical phone remain UNVERIFIED; CI compilation is required before handoff.
 Next: run the existing Android/JVM + native CI workflow, resolve any compile/test findings, then publish an installable APK and compare it on the user's handset against the preserved reference.
+
+## 2026-10-10 — Timeline CI compile fix
+Done: first CI run for `94a4d5f` exposed a missing Compose `fillMaxWidth` import in the rewritten clip view; added the import.
+Failed / root cause → rule: compiler error was `FilmStripClipView.kt:78:18 Unresolved reference fillMaxWidth`; inspect each rewritten view's required layout imports before retrying CI.
+Evidence: failed workflow 44727832563 on `94a4d5f`; fix is source-only and not yet compiled.
+Remaining: rerun build/JVM/native/FFmpeg/release workflow; earlier workflow stopped at Kotlin/JVM compile and did not create APK.
+Next: commit/push this focused import fix and watch resulting CI before reporting any pass or APK availability.

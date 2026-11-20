@@ -189,3 +189,9 @@ Failed / root cause → rule: timeline `onTap` selected a hit clip but only soug
 Evidence: `./tools/run_timeline_core_tests.sh` PASS (170,624 assertions); `python3 tools/run_native_export_tests.py` PASS; local `./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon` BLOCKED before Gradle because `java`/`JAVA_HOME` are absent. Screenshots retained in `docs/design-reference/` and `docs/design-reference/issue-captures/`.
 Remaining: Kotlin/JVM compile and APK build await the pushed CI workflow; Home rendering, import/open, preview poster/decoder fallback, timeline tap/scrub placement, and resize behavior remain UNVERIFIED on handset, which the user will test.
 Next: push the extracted source plus authored fixes on this branch, run CI, repair compile/test failures, publish and checksum the APK; do not claim runtime/visual correctness from source inspection.
+
+## 2026-10-10 — Android CI and test APK handoff
+Done: changes landed on the active branch and were compiled/tested in the Android CI toolchain; an installable debug test APK was published.
+Verification: GitHub Actions run `44734870532` on `9b852a7687cdc4a92ee48515ab09a4cdf2b57f58` passed Kotlin/native compilation, JVM tests, native host tests, repeated FFmpeg Gradle output checks, APK assembly, packaged-license validation, and checksum preparation; host gates also passed locally (170,624 timeline assertions and native export tests).
+APK: `https://github.com/black-glass-dev/Cinema-cut-pro/releases/download/android-test-103-1/Cinema-Cut-Pro-debug-103-1.apk` (89,876,633 bytes), SHA-256 `6b22c7c7836e490d26106a93c914fce2301bd5afc690164665c862726eaced31`; release #103 is a debug-signed device-test build, not a Play Store release.
+Remaining: physical handset UI, imported-video playback, timeline gesture/resize, and appearance checks are UNVERIFIED and remain for the user; a local APK download was attempted but blocked by EOF from GitHub's release-asset host, so use the release link above.

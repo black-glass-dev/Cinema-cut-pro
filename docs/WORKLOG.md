@@ -152,6 +152,6 @@ Next: user can test release `android-test-95-1`; continue tracing/repairing rema
 ## 2026-10-10 — Preview fallback error-key follow-up
 Done: keyed playback-error deduplication by asset, engine, message, and structured category so identical Media3 failures on different clips do not suppress fallback.
 Failed / root cause → rule: the old per-engine/message key could treat the same failure on a second asset as already handled; include source identity and error category in retry keys.
-Evidence: run 44722855604 passed Kotlin/native compilation, full JVM tests, native export tests, FFmpeg validation, and license checks. Workflow dispatch returned HTTP 403 (`Resource not accessible by integration`); a push marker is used for the final fresh APK build.
-Remaining: release #95 predates this small deduplication follow-up; all physical-device playback, grade, and Timeline behavior remain UNVERIFIED.
-Next: publish the current branch head through push-triggered CI, then provide the latest APK/checksum for the user's handset pass.
+Evidence: run 44723887294 on `812ba7a` passed Kotlin/native compilation, full JVM tests, native export tests, FFmpeg validation, license checks, APK assembly, and release publication. Fresh release `android-test-97-1`: `Cinema-Cut-Pro-debug-97-1.apk`, 89,827,481 bytes, SHA-256 `769b79aaaeb80b143a1a68bf3534b03a5ecd13dd51f7fe0d843671c2d368825b`.
+Remaining: all physical-device playback, grade, and Timeline behavior remain UNVERIFIED.
+Next: continue source-side diagnosis/fixes for the remaining preview-grade, nodes/LUT/history/export usability issues; the user may run the handset checklist independently.

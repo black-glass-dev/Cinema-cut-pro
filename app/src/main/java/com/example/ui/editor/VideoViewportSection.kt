@@ -18,6 +18,13 @@ import com.example.timeline.ui.TimelineViewModel
 import com.example.ui.editor.viewport.*
 import com.example.timeline.ui.viewport.CleanVideoCanvas
 
+private data class HandledPlaybackError(
+    val assetId: String?,
+    val engineType: com.example.timeline.engine.preview.PreviewEngineType,
+    val message: String,
+    val category: com.example.timeline.engine.preview.PreviewPlaybackFailureCategory?
+)
+
 @Composable
 fun VideoViewportSection(
     timelineUiState: TimelineUiState,
@@ -60,7 +67,6 @@ fun VideoViewportSection(
     val automaticProxyRequests = remember(project.id) { mutableSetOf<String>() }
     val attemptedFfmpegFallbackAssets = remember(project.id) { mutableSetOf<String>() }
     val latestIsPlaying by rememberUpdatedState(isPlaying)
-    
 
     LaunchedEffect(project) {
         timelinePreviewController.onProjectChanged(project)
@@ -138,9 +144,7 @@ fun VideoViewportSection(
         onDispose { timelinePreviewController.onPlaybackEnded = null }
     }
 
-    var handledPlaybackError by remember {
-        mutableStateOf<Triple<com.example.timeline.engine.preview.PreviewEngineType, String, com.example.timeline.engine.preview.PreviewPlaybackFailureCategory?>?>(null)
-    }
+    var handledPlaybackError by remember { mutableStateOf<HandledPlaybackError?>(null) }
     LaunchedEffect(
         currentAsset?.assetId,
         playerError,
@@ -156,7 +160,7 @@ fun VideoViewportSection(
             handledPlaybackError = null
             return@LaunchedEffect
         }
-        val errorKey = Triple(engineType, error, playbackFailure?.category)
+        val errorKey = HandledPlaybackError(asset?.assetId, engineType, error, playbackFailure?.category)
         if (handledPlaybackError == errorKey) return@LaunchedEffect
         handledPlaybackError = errorKey
 
@@ -260,9 +264,9 @@ fun VideoViewportSection(
             ) {
                 val availableWidth = maxWidth
                 val screenHeight = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
-                val availableHeight = if (maxHeight != androidx.compose.ui.unit.Dp.Infinity && maxHeight > 0.dp) maxHeight else screenHeight
                 // Leave room for the viewport title, transport controls and spacing. In landscape,
                 // the parent viewport can be shorter than the old hard-coded 180dp minimum.
+                val availableHeight = if (maxHeight != androidx.compose.ui.unit.Dp.Infinity && maxHeight > 0.dp) maxHeight else screenHeight
                 val canvasMaxHeight = (availableHeight - 72.dp).coerceAtLeast(64.dp)
                     .coerceAtMost(420.dp)
 

@@ -142,9 +142,9 @@ Evidence: run 44719380177 passed `compileDebugKotlin`, `externalNativeBuildDebug
 Remaining: handset drag/scrub verification remains UNVERIFIED; clip edit bounds still rely on Core v2 validation and handset proof.
 Next: user can test the fresh APK while source-side MOV/error fallback work continues; apply any reported findings without waiting on device results.
 
-## MOV unsupported-source fallback (source change pending CI)
+## MOV unsupported-source fallback
 Done: added a guarded Media3 `UNSUPPORTED_MEDIA` → bundled FFmpeg fallback when auto-fallback is enabled; bypassed proxy/effect failures and active color-grading sessions, and prevent one-time fallback from looping back to Media3.
-Failed / root cause → rule: current fallback handled native-to-Media3 only, leaving a Media3 container/codec rejection on the default route without an alternate decoder; only pivot on structured unsupported-source errors, not generic playback or shader errors.
-Evidence: pure routing regression cases added for accepted/rejected transitions; `git diff --check` and standalone native export tests passed, but this Kotlin change awaits CI compilation/JVM tests.
-Remaining: specific handset MOV codec/runtime remains UNVERIFIED; FFmpeg color-grade capability is limited, so the route is suppressed while the Color workspace is active.
-Next: run Android/JVM CI, fix any failures, then user may verify MOV playback using the newly published test APK.
+Failed / root cause → rule: fallback previously handled native-to-Media3 only, leaving a structured Media3 container/codec rejection on the default route without an alternate decoder; only pivot on unsupported-source errors, not generic playback or shader errors.
+Evidence: run 44721084836 passed `compileDebugKotlin`, `externalNativeBuildDebug`, full `testDebugUnitTest`, native export tests, FFmpeg output validation, license verification, and `assembleDebug`; release `android-test-95-1` is a 89,827,481-byte APK (SHA-256 `bb061dc34ef5b95d544af5783df335c9860bd9d52c8d3d899be12000f099cbf2`). Standalone `python3 tools/run_native_export_tests.py` passed too.
+Remaining: handset MOV codec/runtime remains UNVERIFIED; FFmpeg color-grade capability is limited, so this route is suppressed while the Color workspace is active.
+Next: user can test release `android-test-95-1`; continue tracing/repairing remaining preview-grade and Timeline issues source-side.

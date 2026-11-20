@@ -223,3 +223,10 @@ Failed / root cause → rule: workflow dispatch returned HTTP 403, and marked ru
 Evidence: `44758484403` PASS includes Kotlin/native compile, JVM tests, host export tests, and FFmpeg gates; no APK was produced by the failed release run.
 Remaining: no updated APK yet; real-device UI and MP4 imports/exports remain UNVERIFIED. Color grading remains deferred.
 Next: retry the approved release with a fresh marked push; if dependency resolution recovers, hand off that debug APK for handset validation.
+
+## 2026-10-10 — Timeline/device-test APK #113 handoff
+Done: retry recovered; Android compile/JVM/native/FFmpeg gates and APK assembly passed, and test release #113 was published from source commit `dd9fc32`.
+Failed / root cause → rule: first marker run `44759786572` hit a transient KSP plugin-resolution failure before compile; the next marked run completed successfully, so retain both records and trust the green run only.
+Evidence: GitHub Actions `44760106483` PASS; APK `Cinema-Cut-Pro-debug-113-1.apk` (90,122,377 bytes), release `https://github.com/black-glass-dev/Cinema-cut-pro/releases/tag/android-test-113-1`; checksum sidecar and license checks passed.
+Remaining: APK download from this sandbox is blocked by the release-assets host; device installation, appearance, importing/exporting real MP4s, trim boundary behavior, and playhead gestures are UNVERIFIED. Color grading remains deferred.
+Next: install release #113 on the handset and report the results for two-video import/export, post-split/trim export, edge clamping, and playhead placement over clips and gaps.

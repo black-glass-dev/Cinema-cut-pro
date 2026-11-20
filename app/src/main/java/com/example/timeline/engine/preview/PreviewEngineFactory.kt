@@ -40,9 +40,6 @@ object PreviewEngineFactory {
             PreviewEngineType.BROWSER -> {
                 return com.example.timeline.engine.preview.browser.BrowserPreviewEngine(context)
             }
-            PreviewEngineType.NATIVE_CPP -> {
-                return com.example.timeline.engine.preview.native.NativeCppPreviewEngine()
-            }
             PreviewEngineType.MOTIONCAM_RAW -> {
                 return MotionCamRawPreviewEngine(context)
             }

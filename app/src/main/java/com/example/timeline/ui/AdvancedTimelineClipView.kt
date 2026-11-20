@@ -16,7 +16,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.timeline.core.TimelineClip
 import com.example.timeline.media.MediaAsset
-import com.example.timeline.engine.native.NativeTimelineCore
 
 @Composable
 fun AdvancedTimelineClipView(

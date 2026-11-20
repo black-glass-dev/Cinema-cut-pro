@@ -16,8 +16,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.example.timeline.media.MediaAsset
+import com.example.timeline.media.MediaTimeMapping
 import com.example.timeline.core.TimelineClip
-import com.example.timeline.engine.native.NativeTimelineCore
 import com.example.timeline.engine.preview.TimelineThumbnailGenerator
 
 @Composable
@@ -38,33 +38,60 @@ fun FilmStripThumbnailRow(
     val displayHeight = (if (isQuarterTurn) mediaAsset.metadata.width else mediaAsset.metadata.height).coerceAtLeast(1)
     val widthPx = heightPx * (displayWidth.toFloat() / displayHeight.toFloat())
     
-    val durationFrames = clip.timelineEnd - clip.timelineStart
-    val thumbnailPlans = remember(clip.id, durationFrames, pixelsPerFrame, clip.sourceIn) {
-        val rawPlans = NativeTimelineCore.nativeCalculateThumbnailCells(
-            startFrame = clip.timelineStart,
-            durationFrames = durationFrames,
-            cellWidth = widthPx,
-            pixelsPerFrame = pixelsPerFrame,
-            sourceInFrame = clip.sourceIn
-        )
-        val numCells = rawPlans.size / 4
-        val plans = mutableListOf<ThumbnailCellPlan>()
-        for (i in 0 until numCells) {
-            plans.add(
-                ThumbnailCellPlan(
-                    cellIndex = rawPlans[i * 4].toInt(),
-                    sourceFrame = rawPlans[i * 4 + 1].toLong(),
-                    startX = rawPlans[i * 4 + 2],
-                    width = rawPlans[i * 4 + 3]
-                )
-            )
-        }
-        plans
-    }
-
-    val clipStartX = NativeTimelineCore.frameToX(clip.timelineStart, pixelsPerFrame)
+    val durationFrames = (clip.timelineEnd - clip.timelineStart).coerceAtLeast(0L)
+    val clipStartX = TimelineUiGeometry.frameToX(clip.timelineStart, pixelsPerFrame)
     val localVisibleStart = scrollX - clipStartX
     val localVisibleEnd = localVisibleStart + viewportWidth
+    val thumbnailPlans = remember(
+        clip.id, durationFrames, pixelsPerFrame, clip.sourceIn, widthPx, localVisibleStart, localVisibleEnd
+    ) {
+        if (durationFrames == 0L || !widthPx.isFinite() || widthPx <= 0f ||
+            !pixelsPerFrame.isFinite() || pixelsPerFrame <= 0f
+        ) {
+            emptyList()
+        } else {
+            val clipWidth = durationFrames.toDouble() * pixelsPerFrame.toDouble()
+            if (!clipWidth.isFinite() || clipWidth <= 0.0) {
+                emptyList()
+            } else {
+                val lastCell = (kotlin.math.ceil(clipWidth / widthPx.toDouble()).toLong() - 1L)
+                    .coerceAtLeast(0L)
+                val firstVisible = kotlin.math.floor(localVisibleStart.toDouble() / widthPx.toDouble()).toLong()
+                val lastVisible = kotlin.math.ceil(localVisibleEnd.toDouble() / widthPx.toDouble()).toLong()
+                val firstCandidate = if (firstVisible <= 1L) 0L else firstVisible - 1L
+                val firstCell = firstCandidate.coerceAtMost(lastCell)
+                val lastCellExclusive = lastCell + 1L
+                val visibleEndCandidate = if (lastVisible >= Long.MAX_VALUE - 1L) {
+                    Long.MAX_VALUE
+                } else maxOf(firstCell + 1L, lastVisible + 1L)
+                val endCell = visibleEndCandidate.coerceAtMost(lastCellExclusive)
+                val framesPerCell = widthPx.toDouble() / pixelsPerFrame.toDouble()
+                buildList {
+                    var index = firstCell
+                    while (index < endCell) {
+                        val startX = index.toDouble() * widthPx.toDouble()
+                        val cellWidth = minOf(widthPx.toDouble(), clipWidth - startX)
+                        val frameOffset = kotlin.math.floor(index.toDouble() * framesPerCell + 0.5)
+                            .coerceIn(0.0, Long.MAX_VALUE.toDouble()).toLong()
+                        val sourceFrame = try {
+                            Math.addExact(clip.sourceIn, frameOffset)
+                        } catch (_: ArithmeticException) {
+                            Long.MAX_VALUE
+                        }
+                        add(
+                            ThumbnailCellPlan(
+                                cellIndex = index,
+                                sourceFrame = sourceFrame,
+                                startX = startX.coerceIn(-Float.MAX_VALUE.toDouble(), Float.MAX_VALUE.toDouble()).toFloat(),
+                                width = cellWidth.coerceAtLeast(0.0).toFloat()
+                            )
+                        )
+                        index++
+                    }
+                }
+            }
+        }
+    }
 
     Box(modifier = modifier.fillMaxSize().padding(vertical = 12.dp)) {
         thumbnailPlans.forEach { plan ->
@@ -95,21 +122,26 @@ fun ThumbnailCellView(
 ) {
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
     
-    val fps = mediaAsset.metadata.estimatedFrameRate?.fpsAsFloat ?: 30f
-    val timeUs = (plan.sourceFrame * 1_000_000L / fps).toLong()
+    val sourceFrameRate = mediaAsset.metadata.exactFrameRate ?: mediaAsset.metadata.estimatedFrameRate
     val uri = mediaAsset.localOriginalUriString ?: mediaAsset.originalUriString
 
-    LaunchedEffect(plan.sourceFrame, uri) {
-        val bmp = TimelineThumbnailGenerator.getOrGenerateThumbnail(
-            context = context,
-            assetId = mediaAsset.assetId,
-            uriString = uri,
-            timeUs = timeUs,
-            width = targetWidth,
-            height = targetHeight,
-            mimeType = mediaAsset.mimeType
-        )
-        bitmap = bmp
+    LaunchedEffect(plan.sourceFrame, uri, sourceFrameRate) {
+        val timeUs = sourceFrameRate?.let { rate ->
+            runCatching { MediaTimeMapping.sourceFrameToMicroseconds(plan.sourceFrame, rate) }.getOrNull()
+        }
+        bitmap = if (timeUs == null) {
+            null
+        } else {
+            TimelineThumbnailGenerator.getOrGenerateThumbnail(
+                context = context,
+                assetId = mediaAsset.assetId,
+                uriString = uri,
+                timeUs = timeUs,
+                width = targetWidth,
+                height = targetHeight,
+                mimeType = mediaAsset.mimeType
+            )
+        }
     }
 
     val dpStartX = with(LocalDensity.current) { plan.startX.toDp() }

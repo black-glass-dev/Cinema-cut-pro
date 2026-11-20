@@ -26,26 +26,17 @@ import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.VideoEncoderSettings
 import com.example.model.adjustments.VideoAdjustmentParams
-import com.example.model.colorgrade.ColorGradeLayerStack
-import com.example.model.colorgrade.ColorGradeParams
-import com.example.model.colorgrade.ColorGradeStack
-import com.example.model.colorgrade.ColorLayerType
 import com.example.model.colorgrade.ColorMatchParams
-import com.example.model.colorgrade.CurveParams
-import com.example.model.colorgrade.HdrToneMappingParams
-import com.example.model.colorgrade.HslQualifierParams
-import com.example.model.colorgrade.LogTransformParams
-import com.example.model.colorgrade.LutGradeParams
-import com.example.model.colorgrade.SelectiveColorParams
-import com.example.model.colorgrade.SkinToneProtectionParams
 import com.example.timeline.core.ClipType
 import com.example.timeline.core.ProjectColorSpace
 import com.example.timeline.core.Rational
 import com.example.timeline.core.TimelineClip
+import com.example.timeline.core.TimelineFrameMath
 import com.example.timeline.core.TimelineProject
 import com.example.timeline.core.TimelineTrack
 import com.example.timeline.core.TrackType
 import com.example.timeline.core.transform.ClipTransform
+import com.example.timeline.engine.GradeEvaluationEngine
 import com.example.timeline.export.model.ExportBackendType
 import com.example.timeline.export.model.ExportCodec
 import com.example.timeline.export.model.ExportContainer
@@ -60,6 +51,7 @@ import com.example.timeline.media.MotionCamRawFormat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -68,8 +60,11 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.math.BigInteger
 import java.nio.ByteBuffer
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
+import kotlin.math.min
 import kotlin.math.roundToLong
 
 /**
@@ -106,6 +101,7 @@ internal fun hdrModeForExport(hasHdrInput: Boolean): Int = if (hasHdrInput) {
 internal interface Media3CodecSupportProbe {
     fun hasVideoEncoder(settings: ExportSettings, requireHardware: Boolean): Boolean
     fun hasAudioEncoder(sampleRate: Int, channelCount: Int, bitrate: Int): Boolean
+    fun hasMcrawIntermediateEncoder(width: Int, height: Int, frameRate: Float, bitrate: Int): Boolean = false
 }
 
 @OptIn(UnstableApi::class)
@@ -118,6 +114,7 @@ class Media3TransformerBackend internal constructor(
     private val appContext = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
     private val activeExports = ConcurrentHashMap<String, ActiveExport>()
+    private val activeMcrawCancellation = ConcurrentHashMap<String, AtomicBoolean>()
     @Volatile private var projectRef: TimelineProject? = null
 
     private data class ActiveClip(
@@ -127,10 +124,20 @@ class Media3TransformerBackend internal constructor(
     )
 
     private data class ExportClipPlan(
+        val clipId: String,
         val sourceUri: Uri,
+        val sourceStartFrame: Long,
+        val sourceEndFrameExclusive: Long,
         val startPositionUs: Long,
         val endPositionUs: Long,
-        val adjustmentParams: VideoAdjustmentParams?
+        val adjustmentParams: VideoAdjustmentParams?,
+        val asset: MediaAsset
+    )
+
+    private data class McrawIntermediateClip(
+        val sourceUri: Uri,
+        val startPositionUs: Long,
+        val endPositionUs: Long
     )
 
     private data class ExportPlan(
@@ -191,6 +198,31 @@ class Media3TransformerBackend internal constructor(
         // Transformer creates/truncates its output itself. Remove only the target file, never a
         // parent directory; a unique timestamped name is used by the export UI.
         if (output.exists() && !output.delete()) return false
+        return prepareLutData(project)
+    }
+
+    /**
+     * The shared preview/export shader samples LUT textures from the repository cache. Load
+     * every LUT referenced by the composed export params so exported pixels match preview
+     * instead of silently dropping an uncached LUT; a missing LUT file fails the export.
+     */
+    private suspend fun prepareLutData(project: TimelineProject): Boolean {
+        com.example.model.colorgrade.lut.LutRepository.initialize(appContext)
+        val lutIds = project.tracks.asSequence()
+            .filter { it.type == TrackType.VIDEO && it.isVisible }
+            .flatMap { it.clips.asSequence() }
+            .filter { it.isEnabled }
+            .map { clip -> effectiveAdjustmentParams(clip).lutId }
+            .filterNotNull()
+            .distinct()
+            .toList()
+        for (lutId in lutIds) {
+            if (com.example.model.colorgrade.lut.LutRepository.getCachedData(lutId) == null &&
+                com.example.model.colorgrade.lut.LutRepository.loadLutData(lutId) == null
+            ) {
+                return false
+            }
+        }
         return true
     }
 
@@ -199,11 +231,16 @@ class Media3TransformerBackend internal constructor(
         var activeExport: ActiveExport? = null
         var succeeded = false
         var outputFile: File? = null
+        var mcrawTempDirectory: File? = null
         var totalFrames = 0L
 
         try {
             val project = projectRef ?: error("The project must be validated before export.")
             require(job.projectId == project.id) { "Export job project does not match the validated project." }
+            val cancellationFlag = AtomicBoolean(false)
+            activeMcrawCancellation[job.jobId] = cancellationFlag
+            val renderJob = currentCoroutineContext()[Job]
+            val isCancelled = { cancellationFlag.get() || renderJob?.isActive == false }
             val plan = createPlanOrThrow(job.settings, project)
             totalFrames = plan.outputFrameCount
             val targetOutputFile = File(job.outputUri ?: error("No output file was provided."))
@@ -211,6 +248,77 @@ class Media3TransformerBackend internal constructor(
             require(targetOutputFile.parentFile?.isDirectory == true) { "The export output directory is unavailable." }
             if (targetOutputFile.exists() && !targetOutputFile.delete()) {
                 error("The existing output file could not be replaced.")
+            }
+
+            val mcrawSources = plan.clips.filter { MotionCamRawFormat.isMcrawAsset(it.asset) }
+            val mcrawIntermediates = mutableMapOf<String, McrawIntermediateClip>()
+            val mcrawProgressWeight = if (mcrawSources.isEmpty()) 0 else MCRAW_PREPARE_PROGRESS_PERCENT
+            if (mcrawSources.isNotEmpty()) {
+                mcrawTempDirectory = File(appContext.cacheDir, "mcraw-export-${UUID.randomUUID()}")
+                require(mcrawTempDirectory?.mkdirs() == true) { "Could not create the temporary MotionCam export directory." }
+                mcrawSources.forEachIndexed { sourceIndex, sourcePlan ->
+                    if (isCancelled()) throw CancellationException("MotionCam RAW export was cancelled.")
+                    val intermediateFile = File(mcrawTempDirectory!!, "clip-${sourceIndex + 1}.mp4")
+                    val preparationStartPercent =
+                        (sourceIndex.toDouble() / mcrawSources.size.toDouble() * mcrawProgressWeight)
+                            .roundToLong().toInt().coerceIn(0, mcrawProgressWeight)
+                    var lastPreparationPercent = preparationStartPercent
+                    onProgress(
+                        progress(
+                            jobId = job.jobId,
+                            status = ExportJobStatus.ENCODING,
+                            percent = preparationStartPercent,
+                            totalFrames = totalFrames,
+                            startedAtMs = startedAtMs,
+                            stage = "Developing MotionCam RAW"
+                        )
+                    )
+                    val conversionResult = withContext(Dispatchers.IO) {
+                        McrawVideoTranscoder(appContext).transcode(
+                            sourceUri = sourcePlan.sourceUri,
+                            outputFile = intermediateFile,
+                            maximumEdge = min(
+                                McrawVideoTranscoder.MAX_RENDER_EDGE,
+                                maxOf(job.settings.resolutionWidth, job.settings.resolutionHeight)
+                            ),
+                            sourceStartFrame = sourcePlan.sourceStartFrame,
+                            sourceEndFrameExclusive = sourcePlan.sourceEndFrameExclusive,
+                            sourceStartUs = sourcePlan.startPositionUs,
+                            sourceEndUs = sourcePlan.endPositionUs,
+                            frameRate = Rational(job.settings.frameRate.numerator, job.settings.frameRate.denominator),
+                            bitrate = job.settings.videoBitrate,
+                            isCancelled = isCancelled
+                        ) { completedFrames, sourceFrameCount ->
+                            val sourceFraction = if (sourceFrameCount > 0) {
+                                completedFrames.toDouble() / sourceFrameCount.toDouble()
+                            } else {
+                                0.0
+                            }
+                            val totalFraction = (sourceIndex + sourceFraction) / mcrawSources.size.toDouble()
+                            val percent = (totalFraction * mcrawProgressWeight).roundToLong().toInt()
+                                .coerceIn(0, mcrawProgressWeight)
+                            if (percent != lastPreparationPercent) {
+                                lastPreparationPercent = percent
+                                onProgress(
+                                    progress(
+                                        jobId = job.jobId,
+                                        status = ExportJobStatus.ENCODING,
+                                        percent = percent,
+                                        totalFrames = totalFrames,
+                                        startedAtMs = startedAtMs,
+                                        stage = "Developing MotionCam RAW"
+                                    )
+                                )
+                            }
+                        }
+                    }
+                    if (isCancelled()) throw CancellationException("MotionCam RAW export was cancelled.")
+                    mcrawIntermediates[sourcePlan.clipId] = McrawIntermediateClip(
+                        sourceUri = Uri.fromFile(intermediateFile),
+                        startPositionUs = conversionResult.trimStartUs,
+                        endPositionUs = conversionResult.trimEndUs
+                    )
+                }
             }
 
             val completion = CompletableDeferred<Throwable?>()
@@ -229,12 +337,17 @@ class Media3TransformerBackend internal constructor(
             }
 
             val editedItems = plan.clips.map { clipPlan ->
+                if (isCancelled()) throw CancellationException("Export was cancelled.")
+                val mcrawIntermediate = mcrawIntermediates[clipPlan.clipId]
+                val exportSourceUri = mcrawIntermediate?.sourceUri ?: clipPlan.sourceUri
+                val exportStartUs = mcrawIntermediate?.startPositionUs ?: clipPlan.startPositionUs
+                val exportEndUs = mcrawIntermediate?.endPositionUs ?: clipPlan.endPositionUs
                 val sourceItem = MediaItem.Builder()
-                    .setUri(clipPlan.sourceUri)
+                    .setUri(exportSourceUri)
                     .setClippingConfiguration(
                         MediaItem.ClippingConfiguration.Builder()
-                            .setStartPositionUs(clipPlan.startPositionUs)
-                            .setEndPositionUs(clipPlan.endPositionUs)
+                            .setStartPositionUs(exportStartUs)
+                            .setEndPositionUs(exportEndUs)
                             .build()
                     )
                     .build()
@@ -283,10 +396,10 @@ class Media3TransformerBackend internal constructor(
                 progress(
                     jobId = job.jobId,
                     status = ExportJobStatus.ENCODING,
-                    percent = 0,
+                    percent = mcrawProgressWeight,
                     totalFrames = totalFrames,
                     startedAtMs = startedAtMs,
-                    stage = "Preparing Android encoder"
+                    stage = if (mcrawSources.isEmpty()) "Preparing Android encoder" else "Preparing final MP4 encode"
                 )
             )
 
@@ -315,14 +428,17 @@ class Media3TransformerBackend internal constructor(
                     transformer.getProgress(progressHolder)
                 }
                 if (progressState == Transformer.PROGRESS_STATE_AVAILABLE) {
-                    val percent = progressHolder.progress.coerceIn(0, 99)
-                    if (percent != lastReportedPercent) {
-                        lastReportedPercent = percent
+                    val transformerPercent = progressHolder.progress.coerceIn(0, 99)
+                    val percent = mcrawProgressWeight +
+                        ((100 - mcrawProgressWeight) * transformerPercent / 100f).roundToLong().toInt()
+                    val boundedPercent = percent.coerceIn(mcrawProgressWeight, 99)
+                    if (boundedPercent != lastReportedPercent) {
+                        lastReportedPercent = boundedPercent
                         onProgress(
                             progress(
                                 jobId = job.jobId,
                                 status = ExportJobStatus.ENCODING,
-                                percent = percent,
+                                percent = boundedPercent,
                                 totalFrames = totalFrames,
                                 startedAtMs = startedAtMs,
                                 stage = "Encoding MP4"
@@ -371,17 +487,20 @@ class Media3TransformerBackend internal constructor(
         } finally {
             val active = activeExport ?: activeExports[job.jobId]
             activeExports.remove(job.jobId)
+            activeMcrawCancellation.remove(job.jobId)
             withContext(NonCancellable + Dispatchers.Main.immediate) {
                 active?.let {
                     if (!succeeded) runCatching { it.transformer.cancel() }
                     runCatching { it.transformer.removeListener(it.listener) }
                 }
             }
+            mcrawTempDirectory?.deleteRecursively()
             if (!succeeded) outputFile?.delete()
         }
     }
 
     override fun cancel(jobId: String) {
+        activeMcrawCancellation[jobId]?.set(true)
         val active = activeExports[jobId] ?: return
         if (Looper.myLooper() == Looper.getMainLooper()) {
             runCatching { active.transformer.cancel() }
@@ -391,6 +510,7 @@ class Media3TransformerBackend internal constructor(
     }
 
     override fun release() {
+        activeMcrawCancellation.values.forEach { it.set(true) }
         activeExports.keys.toList().forEach(::cancel)
         projectRef = null
     }
@@ -600,32 +720,82 @@ class Media3TransformerBackend internal constructor(
         val audioFormats = mutableSetOf<Pair<Int, Int>>()
         activeClips.forEach { active ->
             val (clip, track, asset) = active
+            val isMcraw = MotionCamRawFormat.isMcrawAsset(asset)
             if (clip.type != ClipType.MEDIA) errors += "Only regular media clips can be exported by this path."
             if (clip.duration <= 0L) errors += "An active video clip has no duration."
             if (!asset.metadata.hasVideo || asset.assetType != com.example.timeline.media.MediaAssetType.VIDEO) {
                 errors += "Every active timeline clip must reference imported video media."
             }
             if (asset.metadata.durationUs <= 0L) errors += "An imported video has no usable duration metadata."
-            if (MotionCamRawFormat.isMcrawAsset(asset)) {
-                errors += "MotionCam RAW (.mcraw) video export is not implemented by the H.264/MP4 backend. Export a rendered standard video file instead."
+            if (isMcraw) {
+                val sourceFrameCount = asset.metadata.durationFramesInSourceRate
+                val trimRange = runCatching {
+                    framesToUs(clip.sourceIn, projectFps) to framesToUs(clip.sourceOut, projectFps)
+                }.getOrNull()
+                val sourceFrameRate = asset.metadata.exactFrameRate ?: asset.metadata.estimatedFrameRate
+                val sourceFrameRange = if (trimRange != null && sourceFrameRate != null) {
+                    mcrawFrameRangeForTimeUs(trimRange.first, trimRange.second, sourceFrameRate)
+                } else {
+                    null
+                }
+                if (sourceFrameCount <= 0L || sourceFrameRange == null ||
+                    sourceFrameRange.startFrame < 0L || sourceFrameRange.endFrameExclusive > sourceFrameCount
+                ) {
+                    errors += "The selected MotionCam time range cannot be mapped to source frames inside the decoded recording."
+                }
+                val rawPixelCount = asset.metadata.width.toLong() * asset.metadata.height.toLong()
+                if (asset.metadata.width < 2 || asset.metadata.height < 2 ||
+                    rawPixelCount > McrawVideoTranscoder.MAX_SOURCE_RAW_PIXELS
+                ) {
+                    errors += "MotionCam RAW frames above 24 megapixels or with invalid dimensions are blocked to bound export memory."
+                }
+                val maximumEdge = min(
+                    McrawVideoTranscoder.MAX_RENDER_EDGE,
+                    maxOf(settings.resolutionWidth, settings.resolutionHeight)
+                )
+                val intermediateSize = mcrawRenderSize(
+                    sourceWidth = asset.metadata.width,
+                    sourceHeight = asset.metadata.height,
+                    rotationDegrees = asset.metadata.rotationDegrees,
+                    maximumEdge = maximumEdge
+                )
+                if (maximumEdge < 64 || intermediateSize == null) {
+                    errors += "MotionCam RAW dimensions or rotation cannot be rendered to an even-sized H.264 frame."
+                } else if (!codecSupportProbe.hasMcrawIntermediateEncoder(
+                        intermediateSize.width,
+                        intermediateSize.height,
+                        settings.frameRate.floatValue,
+                        settings.videoBitrate
+                    )
+                ) {
+                    errors += "No Android H.264 encoder with flexible YUV input supports the MotionCam intermediate frame size, frame rate, and bitrate on this device."
+                }
+                if (settings.includeAudio && !track.isMuted && asset.metadata.hasAudio) {
+                    errors += "MotionCam RAW embedded PCM audio is not connected to the H.264/MP4 export path yet; turn off Include audio to export its video."
+                }
             }
             if (asset.metadata.isVariableFrameRate) {
                 errors += "Variable-frame-rate media cannot be conformed to project FPS by this Media3 path yet; export is blocked and the original remains unchanged."
             } else if (!asset.metadata.variableFrameRateDetectionComplete) {
                 errors += "Video timestamp cadence is unverified; reanalyze the source before export."
             }
-            if (asset.metadata.videoStreams.any { it.isLog }) {
-                errors += "Log-encoded source video is not supported by this Rec.709 export path; convert the source to SDR first."
-            }
-            if (asset.metadata.videoStreams.any { it.isHdr } && Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-                errors += "HDR-to-SDR export requires Android 10 or newer on this Media3 path."
-            }
-            if (asset.metadata.videoStreams.any {
-                    (it.bitDepth ?: 8) > 8 && !it.isHdr &&
-                        it.colorTransfer != MediaFormat.COLOR_TRANSFER_SDR_VIDEO
+            // MotionCam metadata describes high-bit-depth Bayer sensor samples, not an encoded
+            // HDR/log video track. Its explicit bridge develops those samples to 8-bit SDR before
+            // Media3 sees them, so the ordinary encoded-video transfer checks do not apply here.
+            if (!isMcraw) {
+                if (asset.metadata.videoStreams.any { it.isLog }) {
+                    errors += "Log-encoded source video is not supported by this Rec.709 export path; convert the source to SDR first."
                 }
-            ) {
-                errors += "A greater-than-8-bit source has no verified SDR transfer metadata; export is blocked to avoid incorrect color conversion."
+                if (asset.metadata.videoStreams.any { it.isHdr } && Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                    errors += "HDR-to-SDR export requires Android 10 or newer on this Media3 path."
+                }
+                if (asset.metadata.videoStreams.any {
+                        (it.bitDepth ?: 8) > 8 && !it.isHdr &&
+                            it.colorTransfer != MediaFormat.COLOR_TRANSFER_SDR_VIDEO
+                    }
+                ) {
+                    errors += "A greater-than-8-bit source has no verified SDR transfer metadata; export is blocked to avoid incorrect color conversion."
+                }
             }
             if (clip.transform != ClipTransform.defaultTransform()) {
                 errors += "Clip transforms, crops, perspective changes, and transform keyframes are not supported by this path yet."
@@ -638,13 +808,33 @@ class Media3TransformerBackend internal constructor(
                 errors += Media3ClipAdjustmentSupport.validationErrors(
                     clip.adjustments.copy(params = effectiveAdjustmentParams)
                 )
-            } else if (clip.colorGrade.enabled && clip.colorGrade.curves != CurveParams()) {
-                errors += Media3ClipAdjustmentSupport.validationErrors(
-                    VideoAdjustmentParams.default().copy(curves = effectiveAdjustmentParams.curves)
-                )
+            } else if (Media3ClipAdjustmentSupport.hasRenderableAdjustments(effectiveAdjustmentParams)) {
+                errors += Media3ClipAdjustmentSupport.validationErrors(effectiveAdjustmentParams)
             }
-            if (hasEnabledGrade(clip.colorGrade) || hasEnabledColorLayers(clip.colorLayers, clip.colorGrade)) {
-                errors += "Clip color grades and LUT layers are not supported by this export path yet."
+
+            // The shared composer renders primary corrections, curves, LUTs, skin-tone
+            // protection, qualifiers, selective HSL, grain, vignette, and channel mixing through
+            // the same effect as preview. What cannot be represented by the static per-clip
+            // parameter block is rejected here instead of being silently dropped.
+            if (clip.colorGrade.keyframes.isNotEmpty()) {
+                errors += "Animated clip color grades are not supported by this export path yet."
+            }
+            if (clip.colorGrade.blendMode != "NORMAL") {
+                errors += "Clip color grade blend modes are not supported by this export path yet."
+            }
+            if (clip.colorGrade.colorMatch != ColorMatchParams()) {
+                errors += "Color Match is not supported by this export path yet."
+            }
+            clip.colorLayers.layers.filter { it.enabled }.forEach { layer ->
+                if (layer.grade.keyframes.isNotEmpty()) {
+                    errors += "Animated color nodes are not supported by this export path yet."
+                }
+                if (layer.grade.blendMode != "NORMAL") {
+                    errors += "Color node blend modes are not supported by this export path yet."
+                }
+                if (layer.grade.colorMatch != ColorMatchParams()) {
+                    errors += "Color Match on color nodes is not supported by this export path yet."
+                }
             }
 
             if (clip.sourceIn < 0L || clip.sourceOut < 0L) {
@@ -657,8 +847,18 @@ class Media3TransformerBackend internal constructor(
                     errors += "A clip trim range is too large to represent safely."
                 } else {
                     val (sourceInUs, sourceOutUs) = trimRange
-                    val frameToleranceUs = ((1_000_000.0 / projectFps.toDouble()).roundToLong()).coerceAtLeast(1L)
-                    if (sourceOutUs <= sourceInUs || sourceOutUs > asset.metadata.durationUs + frameToleranceUs) {
+                    val frameToleranceUs = TimelineFrameMath.microsecondsFromFrames(1L, projectFps)
+                        ?.coerceAtLeast(1L)
+                    val maximumSourceUs = frameToleranceUs?.let { tolerance ->
+                        try {
+                            Math.addExact(asset.metadata.durationUs, tolerance)
+                        } catch (_: ArithmeticException) {
+                            Long.MAX_VALUE
+                        }
+                    }
+                    if (frameToleranceUs == null || maximumSourceUs == null || sourceOutUs <= sourceInUs ||
+                        sourceOutUs > maximumSourceUs
+                    ) {
                         errors += "A clip trim range is outside its imported video's duration."
                     }
                 }
@@ -677,7 +877,7 @@ class Media3TransformerBackend internal constructor(
                 } else if (embeddedAudioPresent != asset.metadata.hasAudio) {
                     errors += "All clips on the exported video sequence must either contain embedded audio or be muted."
                 }
-                if (asset.metadata.hasAudio) {
+                if (asset.metadata.hasAudio && !isMcraw) {
                     if (asset.metadata.audioStreams.size != 1) {
                         errors += "Exactly one embedded audio stream per clip is supported; separate audio editing is not supported."
                     } else {
@@ -737,7 +937,14 @@ class Media3TransformerBackend internal constructor(
         if (activeAssets.any { asset -> asset.metadata.videoStreams.any { it.isHdr } }) {
             warnings += "HDR source footage will be tone-mapped to Rec.709 SDR; the exported H.264 file will not preserve HDR."
         }
-        if (activeAssets.any { asset -> asset.metadata.videoStreams.any { (it.bitDepth ?: 8) > 8 && !it.isHdr } }) {
+        if (activeAssets.any { MotionCamRawFormat.isMcrawAsset(it) }) {
+            warnings += "MotionCam RAW is developed by the app's lightweight Bayer renderer to 8-bit SDR before H.264 encoding; this is not a full camera ISP render or a 10-bit RAW-preserving export."
+        }
+        if (activeAssets.any { asset ->
+                !MotionCamRawFormat.isMcrawAsset(asset) &&
+                    asset.metadata.videoStreams.any { (it.bitDepth ?: 8) > 8 && !it.isHdr }
+            }
+        ) {
             warnings += "Greater-than-8-bit SDR input will be converted to 8-bit H.264 output."
         }
         if (activeAssets.size > 1) {
@@ -760,22 +967,35 @@ class Media3TransformerBackend internal constructor(
             val sourceUriString = asset.localOriginalUriString?.takeIf { it.isNotBlank() } ?: asset.originalUriString
             val parsedUri = Uri.parse(sourceUriString)
             val sourceUri = if (parsedUri.scheme == null) Uri.fromFile(File(sourceUriString)) else parsedUri
+            val startPositionUs = framesToUs(timelineClip.sourceIn, projectFps)
+            val endPositionUs = framesToUs(timelineClip.sourceOut, projectFps)
+            val sourceFrameRange = if (MotionCamRawFormat.isMcrawAsset(asset)) {
+                val sourceFrameRate = asset.metadata.exactFrameRate ?: asset.metadata.estimatedFrameRate
+                    ?: error("MotionCam source frame rate is unavailable.")
+                mcrawFrameRangeForTimeUs(startPositionUs, endPositionUs, sourceFrameRate)
+                    ?: error("MotionCam clip time range cannot be mapped to source frames.")
+            } else {
+                SourceFrameRange(timelineClip.sourceIn, timelineClip.sourceOut)
+            }
             ExportClipPlan(
+                clipId = timelineClip.id,
                 sourceUri = sourceUri,
-                startPositionUs = framesToUs(timelineClip.sourceIn, projectFps),
-                endPositionUs = framesToUs(timelineClip.sourceOut, projectFps),
+                sourceStartFrame = sourceFrameRange.startFrame,
+                sourceEndFrameExclusive = sourceFrameRange.endFrameExclusive,
+                startPositionUs = startPositionUs,
+                endPositionUs = endPositionUs,
                 adjustmentParams = effectiveAdjustmentParams(timelineClip).takeIf { params ->
-                    val gradeCurvesEnabled = timelineClip.colorGrade.enabled &&
-                        timelineClip.colorGrade.curves != CurveParams()
-                    (timelineClip.adjustments.enabled || gradeCurvesEnabled) &&
-                        Media3ClipAdjustmentSupport.hasRenderableAdjustments(params)
-                }
+                    Media3ClipAdjustmentSupport.hasRenderableAdjustments(params)
+                },
+                asset = asset
             )
         }
         val totalDurationUs = clipPlans.fold(0L) { totalUs, clip ->
-            Math.addExact(totalUs, clip.endPositionUs - clip.startPositionUs)
+            val clipDurationUs = Math.subtractExact(clip.endPositionUs, clip.startPositionUs)
+            Math.addExact(totalUs, clipDurationUs)
         }
-        val outputFrames = framesAtRate(totalDurationUs, settings.frameRate).coerceAtLeast(1L)
+        val outputFrames = framesAtRate(totalDurationUs, settings.frameRate)
+        check(outputFrames > 0L) { "Validated export duration must produce at least one output frame." }
         val includeAudio = shouldIncludeEmbeddedAudio(
             settings = settings,
             trackMuted = track.isMuted,
@@ -793,71 +1013,41 @@ class Media3TransformerBackend internal constructor(
         )
     }
 
-    private fun effectiveAdjustmentParams(clip: TimelineClip): VideoAdjustmentParams {
-        val gradeCurves = clip.colorGrade.curves
-        val useGradeCurves = clip.colorGrade.enabled && gradeCurves != CurveParams()
-        val params = if (clip.adjustments.enabled) {
-            clip.adjustments.params
-        } else {
-            VideoAdjustmentParams.default()
-        }
-        return params.copy(curves = if (useGradeCurves) gradeCurves else params.curves)
-    }
-
-    private fun hasEnabledGrade(grade: ColorGradeStack): Boolean = grade.enabled &&
-        (grade.opacity != 1f || grade.blendMode != "NORMAL" || grade.keyframes.isNotEmpty() ||
-            grade.inputTransform != LogTransformParams() ||
-            // Basic primary corrections and curves are mirrored into VideoAdjustmentParams by the
-            // editor and rendered by the shared GPU effect. Unsupported wheel values are rejected
-            // by the clip-adjustment validator rather than silently discarded.
-            hasExportUnsupportedQualifier(grade.hslAdjustments) ||
-            grade.selectiveColor != SelectiveColorParams() ||
-            grade.lutStack != LutGradeParams() || grade.colorMatch != ColorMatchParams() ||
-            grade.skinToneProtection != SkinToneProtectionParams() || grade.hdrToneMapping != HdrToneMappingParams())
-
-    private fun hasExportUnsupportedQualifier(params: HslQualifierParams): Boolean = params.enabled &&
-        (params.showMatte || params.hueShift != 0f || params.saturation != 1f || params.luminance != 0f ||
-            params.contrast != 0f || params.temperature != 0f || params.tint != 0f)
-
-    private fun hasEnabledColorLayers(stack: ColorGradeLayerStack, clipGrade: ColorGradeStack): Boolean {
-        if (!stack.enabled) return false
-        val enabledLayers = stack.layers.filter { it.enabled }
-        if (enabledLayers.size == 1) {
-            val onlyLayer = enabledLayers.single()
-            // The grading editor mirrors its active single primary node onto the clip grade;
-            // render it once through the shared effect, not once per stored representation.
-            if (onlyLayer.type == ColorLayerType.PRIMARY_CORRECTION && onlyLayer.opacity == 1f &&
-                onlyLayer.grade == clipGrade
-            ) return false
-        }
-        return enabledLayers.size > 1 || enabledLayers.any { layer ->
-                layer.type != ColorLayerType.PRIMARY_CORRECTION || layer.opacity != 1f ||
-                hasEnabledGrade(layer.grade) ||
-                (layer.grade.enabled && (
-                    layer.grade.primaryCorrections != ColorGradeParams() || layer.grade.curves != CurveParams()
-                ))
-        }
-    }
+    /**
+     * Export and preview must render the same pixels, so the export plan evaluates each clip
+     * through the shared `GradeEvaluationEngine.evaluateClipGrade` composer: the clip's keyframed
+     * adjustment block, its persisted clip grade (including legacy unmirrored values), and its
+     * enabled color nodes in order, at the clip's first evaluated frame.
+     */
+    private fun effectiveAdjustmentParams(clip: TimelineClip): VideoAdjustmentParams =
+        GradeEvaluationEngine.evaluateClipGrade(clip, frame = clip.sourceIn.coerceAtLeast(0L))
 
     private fun frameRatesMatch(sourceRate: FrameRate, exportRate: com.example.timeline.export.model.ExportFrameRate): Boolean {
-        if (sourceRate.numerator <= 0 || sourceRate.denominator <= 0) return false
-        return abs(sourceRate.fpsAsFloat - exportRate.floatValue) <= FRAME_RATE_TOLERANCE_FPS
+        if (sourceRate.numerator <= 0 || sourceRate.denominator <= 0 ||
+            exportRate.numerator <= 0 || exportRate.denominator <= 0
+        ) return false
+        val sourceScaled = BigInteger.valueOf(sourceRate.numerator.toLong())
+            .multiply(BigInteger.valueOf(exportRate.denominator.toLong()))
+        val exportScaled = BigInteger.valueOf(exportRate.numerator.toLong())
+            .multiply(BigInteger.valueOf(sourceRate.denominator.toLong()))
+        val denominator = BigInteger.valueOf(sourceRate.denominator.toLong())
+            .multiply(BigInteger.valueOf(exportRate.denominator.toLong()))
+        // Accept at most 0.01 fps difference, compared exactly as rational values.
+        return sourceScaled.subtract(exportScaled).abs().multiply(BigInteger.valueOf(100L)) <= denominator
     }
 
     private fun framesToUs(frames: Long, frameRate: Rational): Long {
         require(frames >= 0L && frameRate.numerator > 0 && frameRate.denominator > 0)
-        val numerator = BigInteger.valueOf(frames)
-            .multiply(BigInteger.valueOf(1_000_000L))
-            .multiply(BigInteger.valueOf(frameRate.denominator.toLong()))
-        return numerator.divide(BigInteger.valueOf(frameRate.numerator.toLong())).longValueExact()
+        return TimelineFrameMath.microsecondsFromFrames(frames, frameRate)
+            ?: throw ArithmeticException("Frame timestamp overflows Long")
     }
 
     private fun framesAtRate(durationUs: Long, frameRate: com.example.timeline.export.model.ExportFrameRate): Long {
         if (durationUs <= 0L || frameRate.numerator <= 0 || frameRate.denominator <= 0) return 0L
-        return BigInteger.valueOf(durationUs)
-            .multiply(BigInteger.valueOf(frameRate.numerator.toLong()))
-            .divide(BigInteger.valueOf(1_000_000L * frameRate.denominator.toLong()))
-            .longValueExact()
+        return TimelineFrameMath.framesFromMicrosecondsCeiling(
+            durationUs,
+            Rational(frameRate.numerator, frameRate.denominator)
+        ) ?: throw ArithmeticException("Export frame count overflows Long")
     }
 
     private fun progress(
@@ -887,8 +1077,8 @@ class Media3TransformerBackend internal constructor(
     }
 
     private companion object {
+        const val MCRAW_PREPARE_PROGRESS_PERCENT = 10
         const val PROGRESS_POLL_INTERVAL_MS = 250L
-        const val FRAME_RATE_TOLERANCE_FPS = 0.01f
         const val MIN_SAMPLE_BUFFER_BYTES = 4 * 1024 * 1024
         const val MAX_SAMPLE_BUFFER_BYTES = 32 * 1024 * 1024
         const val MAX_FAILURE_MESSAGE_LENGTH = 2_000
@@ -905,10 +1095,12 @@ private data class VideoEncoderQuery(
 )
 
 private data class AudioEncoderQuery(val sampleRate: Int, val channelCount: Int, val bitrate: Int)
+private data class McrawIntermediateEncoderQuery(val width: Int, val height: Int, val frameRate: Float, val bitrate: Int)
 
 private object AndroidMedia3CodecSupportProbe : Media3CodecSupportProbe {
     private val videoEncoderSupportCache = ConcurrentHashMap<VideoEncoderQuery, Boolean>()
     private val audioEncoderSupportCache = ConcurrentHashMap<AudioEncoderQuery, Boolean>()
+    private val mcrawEncoderSupportCache = ConcurrentHashMap<McrawIntermediateEncoderQuery, Boolean>()
 
     override fun hasVideoEncoder(settings: ExportSettings, requireHardware: Boolean): Boolean {
         val bitrateMode = when (settings.bitrateMode) {
@@ -954,6 +1146,13 @@ private object AndroidMedia3CodecSupportProbe : Media3CodecSupportProbe {
         // Android's software codecs use these stable names; unknown vendor encoders are treated as hardware-capable.
         val name = codecInfo.name.lowercase()
         return !name.startsWith("omx.google.") && !name.startsWith("c2.android.") && !name.contains("software")
+    }
+
+    override fun hasMcrawIntermediateEncoder(width: Int, height: Int, frameRate: Float, bitrate: Int): Boolean {
+        val query = McrawIntermediateEncoderQuery(width, height, frameRate, bitrate)
+        return mcrawEncoderSupportCache.computeIfAbsent(query) {
+            McrawVideoTranscoder.hasCompatibleEncoder(query.width, query.height, query.frameRate, query.bitrate)
+        }
     }
 
     override fun hasAudioEncoder(sampleRate: Int, channelCount: Int, bitrate: Int): Boolean {

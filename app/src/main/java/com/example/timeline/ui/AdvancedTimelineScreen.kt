@@ -11,9 +11,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.ui.editor.EditorViewModel
-import com.example.timeline.core.CoreTimelineEngine
-import com.example.timeline.core.TimelineClip
-import com.example.timeline.core.TimelineProject
+import com.example.timeline.core.CoreV2RippleScope
 import kotlinx.coroutines.launch
 
 import com.example.timeline.engine.preview.TimelinePreviewController
@@ -34,10 +32,6 @@ fun AdvancedTimelineScreen(
     val selectionController = remember(timelineViewModel, editorViewModel) { SelectionToolController(timelineViewModel, editorViewModel) }
     val bladeController = remember(timelineViewModel) { BladeToolController(timelineViewModel) }
     val trimController = remember(timelineViewModel, editorViewModel) { TrimToolController(timelineViewModel, editorViewModel) }
-    val rippleController = remember(timelineViewModel, editorViewModel) { RippleEditToolController(timelineViewModel, editorViewModel) }
-    val rollController = remember(timelineViewModel, editorViewModel) { RollEditToolController(timelineViewModel, editorViewModel) }
-    val slipController = remember(timelineViewModel, editorViewModel) { SlipToolController(timelineViewModel, editorViewModel) }
-    val slideController = remember(timelineViewModel, editorViewModel) { SlideToolController(timelineViewModel, editorViewModel) }
     val trackController = remember(timelineViewModel) { TrackControlController(timelineViewModel) }
     var rippleAllTracks by remember { mutableStateOf(false) }
     var activeTool by remember { mutableStateOf(TimelineTool.SELECTION) }
@@ -88,20 +82,11 @@ fun AdvancedTimelineScreen(
                         snapEnabled = snapEnabled,
                         linkedSelection = linkedSelection,
                         onClipSelect = { id -> selectionController.handleTap(id) },
-                        onClipMoved = { id, start -> 
-                            val trackId = uiState.project.tracks.find { it.clips.any { c -> c.id == id } }?.id ?: ""
-                            selectionController.handleDragEnd(id, uiState.project.tracks.flatMap { it.clips }.find { it.id == id }?.timelineStart ?: 0L, start, trackId, linkedSelection)
+                        onNativeEditCommit = { commands, label ->
+                            timelineViewModel.commitTimelineEdit(commands, label)
                         },
-                        onTrimStart = { id, start -> timelineViewModel.trimClipStart(id, start, linkedSelection) },
-                        onTrimEnd = { id, end -> timelineViewModel.trimClipEnd(id, end, linkedSelection) },
                         onZoomChange = { zoom -> timelineViewModel.setZoom(zoom) },
-                        onRippleEdit = { id, frame, isStart -> 
-                            if (isStart) rippleController.rippleTrimStart(id, frame, rippleAllTracks) 
-                            else rippleController.rippleTrimEnd(id, frame, rippleAllTracks) 
-                        },
-                        onRollEdit = { id, diff, isStart -> rollController.handleRoll(id, diff, isStart) },
-                        onSlipEdit = { id, diff -> slipController.handleSlip(id, diff) },
-                        onSlideEdit = { id, diff -> slideController.handleSlide(id, diff) },
+                        rippleScope = if (rippleAllTracks) CoreV2RippleScope.ALL_TRACKS else CoreV2RippleScope.SAME_TRACK,
                         onTrackLock = { id, locked -> trackController.toggleLock(id, locked) },
                         onTrackEnable = { id, enabled -> trackController.toggleVisibility(id, enabled) },
                         onTrackMute = { id, muted -> trackController.toggleMute(id, muted) },
@@ -111,6 +96,7 @@ fun AdvancedTimelineScreen(
                         onMoveTrack = { id, index -> timelineViewModel.moveTrack(id, index) },
                         onPlayheadMoved = { frame -> editorViewModel.updatePlayheadFrame(frame); timelineViewModel.setPlayheadFrame(frame) },
                         onBladeCut = { id, frame -> bladeController.handleTap(id, frame, linkedSelection) },
+                        onSetGroupLocked = { clipId, locked -> timelineViewModel.setGroupLocked(clipId, locked) },
                         onTrimStartToPlayhead = { trimController.trimSelectedStartToPlayhead() },
                         onTrimEndToPlayhead = { trimController.trimSelectedEndToPlayhead() }
                     )

@@ -1,25 +1,28 @@
 package com.example.ui.editor
 
-import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.Tab
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+
+internal val editorSections = listOf("Timeline", "Color")
 
 @Composable
 fun EditorToolTabs(
     selectedTab: String,
     onTabSelected: (String) -> Unit
 ) {
-    val tabs = listOf("Timeline", "Pro Timeline", "Transform", "Motion", "Color", "Graph")
-    
     ScrollableTabRow(
-        selectedTabIndex = tabs.indexOf(selectedTab).coerceAtLeast(0),
+        selectedTabIndex = editorSections.indexOf(selectedTab).coerceAtLeast(0),
         containerColor = MaterialTheme.colorScheme.surface,
         contentColor = MaterialTheme.colorScheme.primary,
         edgePadding = 8.dp,
-        divider = { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant) }
+        divider = { androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant) }
     ) {
-        tabs.forEach { title ->
+        editorSections.forEach { title ->
             Tab(
                 selected = selectedTab == title,
                 onClick = { onTabSelected(title) },

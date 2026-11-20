@@ -12,10 +12,15 @@ class PreviewPlaybackSynchronizer(
 ) {
 
     fun syncToTimelineFrame(projectFrame: Long, sourceFrame: Long) {
-        val targetPositionMs = TimelineFrameResolver.convertFrameToMicroseconds(sourceFrame, fpsNumerator, fpsDenominator) / 1000
-        
-        // Only seek if the difference is significant to avoid stuttering
-        if (Math.abs(player.currentPosition - targetPositionMs) > 100) {
+        val targetPositionUs = TimelineFrameResolver.convertFrameToMicroseconds(
+            sourceFrame,
+            fpsNumerator,
+            fpsDenominator
+        ) ?: return
+        val targetPositionMs = targetPositionUs / 1_000L
+
+        // Only seek if the difference is significant to avoid stuttering.
+        if (kotlin.math.abs(player.currentPosition - targetPositionMs) > 100L) {
             player.seekTo(targetPositionMs)
         }
     }
@@ -25,10 +30,24 @@ class PreviewPlaybackSynchronizer(
         timelineStart: Long,
         sourceIn: Long
     ): Long {
-        val playerUs = playerPosMs * 1000
-        val fps = if (fpsDenominator > 0) fpsNumerator.toDouble() / fpsDenominator.toDouble() else 30.0
-        val sourceFrame = (playerUs.toDouble() / 1_000_000.0 * fps).toLong()
-        val offsetFrames = sourceFrame - sourceIn
-        return timelineStart + offsetFrames
+        val playerUs = try {
+            Math.multiplyExact(playerPosMs, 1_000L)
+        } catch (_: ArithmeticException) {
+            return timelineStart
+        }
+        val sourceFrame = com.example.timeline.core.TimelineFrameMath.framesFromMicroseconds(
+            playerUs,
+            com.example.timeline.core.Rational(fpsNumerator, fpsDenominator)
+        ) ?: return timelineStart
+        val offsetFrames = try {
+            Math.subtractExact(sourceFrame, sourceIn)
+        } catch (_: ArithmeticException) {
+            return timelineStart
+        }
+        return try {
+            Math.addExact(timelineStart, offsetFrames)
+        } catch (_: ArithmeticException) {
+            timelineStart
+        }
     }
 }

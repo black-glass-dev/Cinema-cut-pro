@@ -10,7 +10,7 @@ data class VideoStreamInfo(
     val codecLevel: Int?,
     val width: Int,
     val height: Int,
-    val frameRate: FrameRate,
+    val frameRate: FrameRate?,
     val bitDepth: Int?,
     val chromaSubsampling: String?,
     val colorStandard: Int?,

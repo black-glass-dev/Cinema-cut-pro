@@ -12,11 +12,11 @@ class LinkedSelectionController {
         // Find all clips sharing the same mediaId and roughly matching in time
         // Or those with the same metadata["linkedGroupId"]
         
-        val linkedGroupId = initialClip.metadata["linkedGroupId"]
+        val linkedGroupId = initialClip.linkedGroupId
         
         project.tracks.forEach { track ->
             track.clips.forEach { clip ->
-                if (linkedGroupId != null && clip.metadata["linkedGroupId"] == linkedGroupId) {
+                if (linkedGroupId != null && clip.linkedGroupId == linkedGroupId) {
                     selected.add(clip.id)
                 } else if (linkedGroupId == null && clip.mediaId == initialClip.mediaId && clip.id != clipId) {
                     // Fallback heuristic: same media, same timelineStart and sourceIn

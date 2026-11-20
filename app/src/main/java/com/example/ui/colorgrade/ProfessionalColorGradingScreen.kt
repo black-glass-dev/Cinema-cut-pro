@@ -94,6 +94,11 @@ fun ProfessionalColorGradingScreen(
     val layerStack = activeClip.colorLayers
     val selectedLayerId by layerViewModel.selectedLayerId.collectAsState()
     val activeLayer = layerStack.layers.find { it.id == selectedLayerId } ?: layerStack.layers.lastOrNull()
+    LaunchedEffect(activeClip.id, layerStack.layers) {
+        if (layerStack.layers.none { it.id == selectedLayerId }) {
+            layerViewModel.selectLayer(layerStack.layers.lastOrNull()?.id)
+        }
+    }
     // The regular color panel edits the clip grade. Node grades are used only when the node stack
     // is open, preventing edits from disappearing into an unselected default layer.
     val currentGrade = if (showNodes) {
@@ -147,8 +152,66 @@ fun ProfessionalColorGradingScreen(
     var selectedTab by remember { mutableStateOf(0) }
     val tabs = listOf("Wheels", "Curves", "HSL", "LUT", "Match", "Scopes")
 
-    val params = activeClip.adjustments.evaluateParamsAtFrame(playheadFrame)
+    val params = com.example.model.colorgrade.engine.ColorGradeAdjustmentMapper.applyClipGradeIfNotMirrored(
+        base = activeClip.adjustments.evaluateParamsAtFrame(playheadFrame),
+        sourceGrade = activeClip.colorGrade,
+        frame = playheadFrame
+    )
     val isAnalyzingScopes by scopeViewModel.isAnalyzing.collectAsState()
+
+    fun primarySettingValue(parameterId: String): Float {
+        if (!showNodes) {
+            return when (parameterId) {
+                "temperature" -> params.temperature
+                "tint" -> params.tint
+                "contrast" -> params.contrast
+                "saturation" -> params.saturation
+                "vibrance" -> params.vibrance
+                else -> 0f
+            }
+        }
+        val primary = currentGrade.primaryCorrections
+        return when (parameterId) {
+            "temperature" -> primary.temperature
+            "tint" -> primary.tint
+            "contrast" -> primary.contrast
+            "saturation" -> primary.saturation
+            "vibrance" -> primary.vibrance
+            else -> 0f
+        }
+    }
+
+    fun updatePrimarySetting(parameterId: String, value: Float) {
+        if (!showNodes) {
+            colorViewModel.updateAdjustmentParamLive(parameterId, value)
+            return
+        }
+        val primary = currentGrade.primaryCorrections
+        val updated = when (parameterId) {
+            "temperature" -> primary.copy(temperature = value)
+            "tint" -> primary.copy(tint = value)
+            "contrast" -> primary.copy(contrast = value)
+            "saturation" -> primary.copy(saturation = value)
+            "vibrance" -> primary.copy(vibrance = value)
+            else -> primary
+        }
+        if (updated != primary) {
+            colorViewModel.updateColorGradeLive(
+                currentGrade.copy(primaryCorrections = updated),
+                activeColorLayerId
+            )
+        }
+    }
+
+    fun resetPrimarySetting(parameterId: String, value: Float) {
+        if (!showNodes) {
+            colorViewModel.updateAdjustmentParam(parameterId, value)
+            return
+        }
+        colorViewModel.beginAdjustmentDrag()
+        updatePrimarySetting(parameterId, value)
+        colorViewModel.endAdjustmentDrag("Reset $parameterId")
+    }
 
     LaunchedEffect(selectedTab) {
         if (selectedTab == 5) {
@@ -217,7 +280,14 @@ Box(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
-            when (selectedTab) {
+            if (showNodes && activeLayer == null) {
+                Text(
+                    "Add a color node before editing node controls.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            } else {
+                when (selectedTab) {
                 0 -> {
                     // Wheels + Basic Light
                     Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -245,19 +315,53 @@ Box(
                             
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    ColorControlSlider("Temperature", params.temperature, -1f..1f, { colorViewModel.updateAdjustmentParamLive("temperature", it) }, { colorViewModel.updateAdjustmentParamLive("temperature", 0f) })
-                                    ColorControlSlider("Tint", params.tint, -1f..1f, { colorViewModel.updateAdjustmentParamLive("tint", it) }, { colorViewModel.updateAdjustmentParamLive("tint", 0f) })
-                                    ColorControlSlider("Contrast", params.contrast, -1f..1f, { colorViewModel.updateAdjustmentParamLive("contrast", it) }, { colorViewModel.updateAdjustmentParamLive("contrast", 0f) })
+                                    ColorControlSlider(
+                                        "Temperature", primarySettingValue("temperature"), -1f..1f,
+                                        { updatePrimarySetting("temperature", it) },
+                                        { resetPrimarySetting("temperature", 0f) },
+                                        onDragStart = { colorViewModel.beginAdjustmentDrag() },
+                                        onDragEnd = { colorViewModel.endAdjustmentDrag("Temperature") }
+                                    )
+                                    ColorControlSlider(
+                                        "Tint", primarySettingValue("tint"), -1f..1f,
+                                        { updatePrimarySetting("tint", it) },
+                                        { resetPrimarySetting("tint", 0f) },
+                                        onDragStart = { colorViewModel.beginAdjustmentDrag() },
+                                        onDragEnd = { colorViewModel.endAdjustmentDrag("Tint") }
+                                    )
+                                    ColorControlSlider(
+                                        "Contrast", primarySettingValue("contrast"), -1f..1f,
+                                        { updatePrimarySetting("contrast", it) },
+                                        { resetPrimarySetting("contrast", 0f) },
+                                        onDragStart = { colorViewModel.beginAdjustmentDrag() },
+                                        onDragEnd = { colorViewModel.endAdjustmentDrag("Contrast") }
+                                    )
                                 }
                                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                     ColorControlSlider(
-                                        "Saturation", params.saturation, 0f..2f,
-                                        { colorViewModel.updateAdjustmentParamLive("saturation", it) },
-                                        { colorViewModel.updateAdjustmentParamLive("saturation", 1f) },
+                                        "Saturation", primarySettingValue("saturation"), 0f..2f,
+                                        { updatePrimarySetting("saturation", it) },
+                                        { resetPrimarySetting("saturation", 1f) },
+                                        onDragStart = { colorViewModel.beginAdjustmentDrag() },
+                                        onDragEnd = { colorViewModel.endAdjustmentDrag("Saturation") },
                                         valueFormatter = { "${kotlin.math.round(it * 100f).toInt()}%" }
                                     )
-                                    ColorControlSlider("Vibrance", params.vibrance, -1f..1f, { colorViewModel.updateAdjustmentParamLive("vibrance", it) }, { colorViewModel.updateAdjustmentParamLive("vibrance", 0f) })
-                                    ColorControlSlider("Mid Detail", params.clarity, -1f..1f, { colorViewModel.updateAdjustmentParamLive("clarity", it) }, { colorViewModel.updateAdjustmentParamLive("clarity", 0f) })
+                                    ColorControlSlider(
+                                        "Vibrance", primarySettingValue("vibrance"), -1f..1f,
+                                        { updatePrimarySetting("vibrance", it) },
+                                        { resetPrimarySetting("vibrance", 0f) },
+                                        onDragStart = { colorViewModel.beginAdjustmentDrag() },
+                                        onDragEnd = { colorViewModel.endAdjustmentDrag("Vibrance") }
+                                    )
+                                    if (!showNodes) {
+                                        ColorControlSlider(
+                                            "Mid Detail", params.clarity, -1f..1f,
+                                            { colorViewModel.updateAdjustmentParamLive("clarity", it) },
+                                            { colorViewModel.updateAdjustmentParam("clarity", 0f) },
+                                            onDragStart = { colorViewModel.beginAdjustmentDrag() },
+                                            onDragEnd = { colorViewModel.endAdjustmentDrag("Clarity") }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -313,19 +417,63 @@ Box(
                         
                         HorizontalDivider(color = Color.DarkGray)
                         
-                        SkinToneProtectionPanel(
-                            params = params,
-                            viewModel = colorViewModel
-                        )
+                        if (showNodes) {
+                            Text(
+                                "Skin-tone masking controls currently edit clip-level adjustments only.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        } else {
+                            SkinToneProtectionPanel(
+                                params = params,
+                                viewModel = colorViewModel
+                            )
+                        }
                     }
                 }
                 3 -> {
                     // LUT
                     LutPanel(
-                        selectedLutId = params.lutId,
-                        intensity = params.lutIntensity,
-                        onLutSelected = { id -> colorViewModel.setLutId(id) },
-                        onIntensityChanged = { value -> colorViewModel.updateAdjustmentParamLive("lutIntensity", value) }
+                        selectedLutId = if (showNodes) {
+                            currentGrade.lutStack.lutId.takeIf { currentGrade.lutStack.enabled }
+                        } else {
+                            params.lutId
+                        },
+                        intensity = if (showNodes) currentGrade.lutStack.intensity else params.lutIntensity,
+                        onLutSelected = { id ->
+                            if (showNodes && activeColorLayerId != null) {
+                                colorViewModel.beginAdjustmentDrag()
+                                colorViewModel.updateColorGradeLive(
+                                    currentGrade.copy(
+                                        lutStack = currentGrade.lutStack.copy(
+                                            lutId = id,
+                                            enabled = id != null
+                                        )
+                                    ),
+                                    activeColorLayerId
+                                )
+                                colorViewModel.endAdjustmentDrag("Set Node LUT")
+                            } else if (!showNodes) {
+                                colorViewModel.setLutId(id)
+                            }
+                        },
+                        onIntensityChanged = { value ->
+                            if (showNodes && activeColorLayerId != null) {
+                                colorViewModel.beginAdjustmentDrag()
+                                colorViewModel.updateColorGradeLive(
+                                    currentGrade.copy(
+                                        lutStack = currentGrade.lutStack.copy(intensity = value)
+                                    ),
+                                    activeColorLayerId
+                                )
+                            } else if (!showNodes) {
+                                colorViewModel.beginAdjustmentDrag()
+                                colorViewModel.updateAdjustmentParamLive("lutIntensity", value)
+                            }
+                        },
+                        onIntensityChangeFinished = {
+                            colorViewModel.endAdjustmentDrag(if (showNodes) "Node LUT Intensity" else "LUT Intensity")
+                        }
                     )
                 }
                 4 -> {
@@ -343,6 +491,7 @@ Box(
                         onClose = { selectedTab = 0 },
                         modifier = Modifier.fillMaxSize()
                     )
+                }
                 }
             }
         }

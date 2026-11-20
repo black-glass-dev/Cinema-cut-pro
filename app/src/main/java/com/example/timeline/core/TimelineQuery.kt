@@ -1,5 +1,10 @@
 package com.example.timeline.core
 
+/** Deprecated unverified Kotlin mirror of native read-only timeline queries; no app call-sites remain. */
+@Deprecated(
+    message = "Compile guard: use the v2 query boundary or a separately parity-tested read-only adapter",
+    level = DeprecationLevel.ERROR
+)
 object TimelineQuery {
     fun getTimelineEndFrame(project: TimelineProject): Long {
         return project.tracks.flatMap { it.clips }

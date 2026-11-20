@@ -89,9 +89,21 @@ class TimelineViewModel(context: Context) : ViewModel() {
 
     fun syncPlayheadFromPlayer(timeMs: Long, clipTimelineStart: Long, clipSourceIn: Long) {
         val project = _uiState.value.project
-        val currentSourceFrame = (timeMs / 1000.0 * project.settings.getFpsRational().toDouble()).toLong()
-        val timelineFrame = clipTimelineStart + (currentSourceFrame - clipSourceIn)
-        _playheadFrame.value = Math.max(0, timelineFrame)
+        val currentSourceFrame = TimelineFrameMath.framesFromMilliseconds(
+            timeMs,
+            project.settings.getFpsRational()
+        ) ?: return
+        val relativeFrame = try {
+            Math.subtractExact(currentSourceFrame, clipSourceIn)
+        } catch (_: ArithmeticException) {
+            return
+        }
+        val timelineFrame = try {
+            Math.addExact(clipTimelineStart, relativeFrame)
+        } catch (_: ArithmeticException) {
+            return
+        }
+        _playheadFrame.value = timelineFrame.coerceAtLeast(0L)
     }
 
     fun getActiveVideoClipAndAsset(): Pair<TimelineClip, MediaAsset>? {
@@ -100,7 +112,7 @@ class TimelineViewModel(context: Context) : ViewModel() {
         
         // Find topmost video track with a clip at playhead
         for (track in state.project.tracks.filter { it.type == TrackType.VIDEO }.reversed()) {
-            val clip = track.clips.find { it.timelineStart <= playhead && (it.timelineStart + (it.sourceOut - it.sourceIn)) > playhead }
+            val clip = track.clips.find { it.timelineStart <= playhead && it.timelineEnd > playhead }
             if (clip != null) {
                 val asset = state.project.mediaAssets.find { it.assetId == clip.mediaId }
                 if (asset != null) return Pair(clip, asset)
@@ -154,6 +166,7 @@ class TimelineViewModel(context: Context) : ViewModel() {
             }
         )
         historyManager.clear()
+        TimelineCoreV2Adapter.clearHistory(_uiState.value.project.id)
         _playheadFrame.value = 0L
         proxyObservationJobs.values.forEach { it.cancel() }
         proxyObservationJobs.clear()
@@ -653,56 +666,110 @@ class TimelineViewModel(context: Context) : ViewModel() {
 
     fun addClipFromMediaWithMode(mediaAsset: MediaAsset, mode: String) {
         val state = _uiState.value
-        
-        val selectedClip = state.project.tracks.flatMap { it.clips }.find { it.id == state.selectedClipId }
+        val selectedClip = state.project.tracks.asSequence()
+            .flatMap { it.clips.asSequence() }
+            .firstOrNull { it.id == state.selectedClipId }
         val selectedTrackId = selectedClip?.trackId ?: state.project.tracks.firstOrNull()?.id
-        
-        val (p2, newClip) = com.example.timeline.engine.edit.AddToTimelineController.createAddClipCommand(state.project, mediaAsset, _playheadFrame.value, mode, selectedTrackId)
-        
-        // Need to reposition the new track if mode is above or below
-        var finalProject = p2
+        val plan = com.example.timeline.engine.edit.AddToTimelineController.createClipInsertionPlan(
+            project = state.project,
+            mediaAsset = mediaAsset,
+            playheadFrame = _playheadFrame.value,
+            mode = mode,
+            selectedTrackId = selectedTrackId
+        ) ?: return
+
+        // Position a newly-created empty track for explicit above/below insertion modes.
+        var baseProject = plan.baseProject
         if ((mode == "above" || mode == "below") && selectedTrackId != null) {
-            val tracks = finalProject.tracks.toMutableList()
-            val newTrack = tracks.find { it.clips.any { c -> c.id == newClip.id } }
-            if (newTrack != null) {
-                tracks.remove(newTrack)
-                val targetIndex = tracks.indexOfFirst { it.id == selectedTrackId }
-                if (targetIndex != -1) {
-                    val insertIndex = if (mode == "above") targetIndex else targetIndex + 1
-                    tracks.add(insertIndex.coerceIn(0, tracks.size), newTrack)
-                    finalProject = finalProject.copy(tracks = tracks)
-                } else {
-                    tracks.add(newTrack)
-                    finalProject = finalProject.copy(tracks = tracks)
-                }
-            }
+            val tracks = baseProject.tracks.toMutableList()
+            val newTrack = tracks.firstOrNull { it.id == plan.clip.trackId } ?: return
+            tracks.remove(newTrack)
+            val targetIndex = tracks.indexOfFirst { it.id == selectedTrackId }
+            val insertIndex = if (targetIndex == -1) tracks.size
+                else if (mode == "above") targetIndex else targetIndex + 1
+            tracks.add(insertIndex.coerceIn(0, tracks.size), newTrack)
+            baseProject = baseProject.copy(tracks = tracks)
         }
 
-        val cmd = SnapshotCommand("Add Clip", state.project, finalProject, listOf(newClip.id))
-        historyManager.pushCommand(cmd)
-        
-        _playheadFrame.value = newClip.timelineStart
-        _uiState.update { 
-            it.copy(
-                project = finalProject,
-                selectedClipId = newClip.id,
-                canUndo = historyManager.canUndo,
-                canRedo = historyManager.canRedo
-            )
+        val baseChanged = !TimelineCoreV2Adapter.hasSameNativeState(state.project, baseProject)
+        val outcome = commitNativeTimelineEdits(
+            projectForEdit = baseProject,
+            commands = listOf(plan.command),
+            commandName = "Add Clip",
+            affectedClipIds = listOf(plan.clip.id),
+            clearHistoryForBaseChange = baseChanged
+        )
+        if (outcome is CoreV2EditOutcome.Applied && outcome.project != baseProject) {
+            _playheadFrame.value = plan.clip.timelineStart
+            _uiState.update {
+                it.copy(
+                    selectedClipId = plan.clip.id,
+                    selectedClipIds = setOf(plan.clip.id)
+                )
+            }
         }
-        autosaveManager.markDirty(finalProject)
     }
 
     private fun updateState(newProject: TimelineProject, markDirty: Boolean = true) {
-        _uiState.update { 
+        val previousProject = _uiState.value.project
+        if (previousProject.id != newProject.id) {
+            TimelineCoreV2Adapter.clearHistory(previousProject.id)
+            historyManager.clear()
+        } else if (historyManager.containsNativeTimelineCommands() &&
+            !TimelineCoreV2Adapter.hasSameNativeState(previousProject, newProject)
+        ) {
+            // A non-native operation changed fields represented in the native project protocol.
+            // Invalidate only the native journal entries; metadata-only snapshot commands remain valid.
+            TimelineCoreV2Adapter.clearHistory(newProject.id)
+            historyManager.clearNativeTimelineCommands()
+        }
+        publishProjectState(newProject, markDirty)
+    }
+
+    private fun publishNativeProjectState(newProject: TimelineProject, markDirty: Boolean = true) {
+        publishProjectState(newProject, markDirty)
+    }
+
+    private fun publishProjectState(newProject: TimelineProject, markDirty: Boolean) {
+        _uiState.update {
             it.copy(
                 project = newProject,
                 canUndo = historyManager.canUndo,
                 canRedo = historyManager.canRedo
             )
         }
-        if (markDirty) {
-            autosaveManager.markDirty(newProject)
+        if (markDirty) autosaveManager.markDirty(newProject)
+    }
+
+    /** Applies one validated native transaction and records it only in the native journal. */
+    private fun commitNativeTimelineEdits(
+        projectForEdit: TimelineProject,
+        commands: List<CoreV2EditCommand>,
+        commandName: String,
+        affectedClipIds: List<String>,
+        clearHistoryForBaseChange: Boolean = false
+    ): CoreV2EditOutcome? {
+        val currentProject = _uiState.value.project
+        val mustResetHistoryAfterCommit = clearHistoryForBaseChange ||
+            !TimelineCoreV2Adapter.hasSameNativeState(currentProject, projectForEdit)
+
+        return when (val outcome = TimelineCoreV2Adapter.commitEdits(projectForEdit, commands)) {
+            is CoreV2EditOutcome.Applied -> {
+                // Native commit starts a fresh journal when its base hash changed. Mirror that
+                // transition in the Kotlin UI stack only after the edit has succeeded.
+                if (mustResetHistoryAfterCommit) historyManager.clearNativeTimelineCommands()
+                if (outcome.project != projectForEdit) {
+                    historyManager.pushCommand(
+                        NativeTimelineHistoryCommand(
+                            commandName = commandName,
+                            affectedClipIds = outcome.changedClipIds.ifEmpty { affectedClipIds }.distinct()
+                        )
+                    )
+                    publishNativeProjectState(outcome.project)
+                }
+                outcome
+            }
+            is CoreV2EditOutcome.Rejected -> outcome
         }
     }
     
@@ -767,37 +834,126 @@ class TimelineViewModel(context: Context) : ViewModel() {
         }
     }
 
-    fun executeCommand(command: com.example.timeline.core.TimelineCommand) {
-        val result = command.execute(_uiState.value.project)
-        if (result.isSuccess) {
+    private fun nativeCommandsFor(
+        command: TimelineCommand,
+        project: TimelineProject
+    ): List<CoreV2EditCommand>? = when (command) {
+        is TrimCommand -> listOf(
+            CoreV2EditCommand(
+                kind = if (command.isStart) CoreV2EditKind.TRIM_START else CoreV2EditKind.TRIM_END,
+                clipId = command.clipId,
+                targetFrame = command.newFrame,
+                ripple = when (command.mode) {
+                    TrimMode.NORMAL -> CoreV2RippleScope.NONE
+                    TrimMode.RIPPLE -> CoreV2RippleScope.SAME_TRACK
+                    TrimMode.RIPPLE_ALL_TRACKS -> CoreV2RippleScope.ALL_TRACKS
+                }
+            )
+        )
+        is RippleTrimCommand -> listOf(
+            CoreV2EditCommand(
+                kind = if (command.isStart) CoreV2EditKind.TRIM_START else CoreV2EditKind.TRIM_END,
+                clipId = command.clipId,
+                targetFrame = command.newFrame,
+                ripple = if (command.rippleAllTracks) CoreV2RippleScope.ALL_TRACKS
+                    else CoreV2RippleScope.SAME_TRACK
+            )
+        )
+        is SlipCommand -> listOf(
+            CoreV2EditCommand(
+                kind = CoreV2EditKind.SLIP,
+                clipId = command.clipId,
+                deltaFrames = command.deltaFrames
+            )
+        )
+        is SlideCommand -> listOf(
+            CoreV2EditCommand(
+                kind = CoreV2EditKind.SLIDE,
+                clipId = command.clipId,
+                deltaFrames = command.deltaFrames
+            )
+        )
+        is RollEditCommand -> listOf(
+            CoreV2EditCommand(
+                kind = CoreV2EditKind.ROLL,
+                clipId = command.leftClipId,
+                otherClipId = command.rightClipId,
+                deltaFrames = command.deltaFrames
+            )
+        )
+        is RippleDeleteCommand -> listOf(
+            CoreV2EditCommand(
+                kind = CoreV2EditKind.DELETE,
+                clipIds = command.clipIds,
+                ripple = if (command.rippleAllTracks) CoreV2RippleScope.ALL_TRACKS
+                    else CoreV2RippleScope.SAME_TRACK
+            )
+        )
+        is MoveClipCommand -> listOf(
+            CoreV2EditCommand(
+                kind = CoreV2EditKind.MOVE,
+                clipId = command.clipId,
+                targetTrackId = command.trackId,
+                targetFrame = command.newStartFrame
+            )
+        )
+        is InsertClipCommand -> listOf(
+            CoreV2EditCommand(
+                kind = CoreV2EditKind.INSERT,
+                targetTrackId = command.trackId,
+                insertedClip = command.clip.copy(trackId = command.trackId)
+            )
+        )
+        is SplitClipCommand -> command.nativeEditCommands(project)
+        else -> null
+    }
+
+    fun executeCommand(command: TimelineCommand) {
+        val project = _uiState.value.project
+        val nativeCommands = nativeCommandsFor(command, project)
+        if (nativeCommands != null) {
+            if (nativeCommands.isNotEmpty()) {
+                commitNativeTimelineEdits(
+                    projectForEdit = project,
+                    commands = nativeCommands,
+                    commandName = command.commandName,
+                    affectedClipIds = command.affectedClipIds
+                )
+            }
+            return
+        }
+
+        val result = command.execute(project)
+        if (result.isSuccess && TimelineCoreV2Adapter.hasSameNativeState(project, result.project)) {
             historyManager.pushCommand(command)
             updateState(result.project)
         }
     }
 
-    /** Applies the safe, export-specific timeline repair as one undoable history entry. */
+    /** Commits the same command batch that produced the visible native drag preview. */
+    fun commitTimelineEdit(commands: List<CoreV2EditCommand>, commandName: String = "Timeline Edit") {
+        if (commands.isEmpty()) return
+        val project = _uiState.value.project
+        val affectedIds = commands.flatMap { command ->
+            command.clipIds + listOfNotNull(command.clipId, command.otherClipId, command.insertedClip?.id)
+        }.distinct()
+        commitNativeTimelineEdits(project, commands, commandName, affectedIds)
+    }
+
+    /** Applies the safe, export-specific timeline repair as one native undoable transaction. */
     fun fixTimelineForExport(): Boolean {
-        val projectBefore = _uiState.value.project
-        val projectAfter = TimelineExportAutoFixer.compactVisibleVideoTrack(projectBefore) ?: return false
-        val movedClipIds = projectBefore.tracks
-            .flatMap { it.clips }
-            .filter { clip ->
-                val repaired = projectAfter.tracks.asSequence().flatMap { it.clips.asSequence() }
-                    .firstOrNull { it.id == clip.id }
-                repaired != null && repaired.timelineStart != clip.timelineStart
-            }
-            .map { it.id }
-        val command = SnapshotCommand(
+        val project = _uiState.value.project
+        val commands = TimelineExportAutoFixer.compactVisibleVideoTrackCommands(project) ?: return false
+        val affectedIds = commands.flatMap { edit ->
+            edit.clipIds + listOfNotNull(edit.clipId, edit.otherClipId)
+        }.distinct()
+        val outcome = commitNativeTimelineEdits(
+            projectForEdit = project,
+            commands = commands,
             commandName = "Fix Timeline for Export",
-            projectBefore = projectBefore,
-            projectAfter = projectAfter,
-            affectedClipIds = movedClipIds
+            affectedClipIds = affectedIds
         )
-        val result = command.execute(projectBefore)
-        if (!result.isSuccess) return false
-        historyManager.pushCommand(command)
-        updateState(result.project)
-        return true
+        return outcome is CoreV2EditOutcome.Applied && outcome.project != project
     }
 
     fun zoomIn() {
@@ -839,32 +995,22 @@ class TimelineViewModel(context: Context) : ViewModel() {
         val controller = LinkedSelectionController()
         val clipsToDelete = if (linkedSelectionEnabled) controller.getLinkedClips(clipId, state.project, true) else setOf(clipId)
         
-        // Filter out locked tracks
-        val validClipsToDelete = clipsToDelete.filter { cid ->
-            val track = state.project.tracks.find { it.clips.any { c -> c.id == cid } }
-            track?.isLocked != true
-        }
-        
-        if (validClipsToDelete.isEmpty()) return
-
-        val cmd = if (ripple) {
-            CommandFactory.createRippleDeleteCommand(state.project, validClipsToDelete.toList())
-        } else {
-            SnapshotCommand(
-                "Delete Clip",
-                state.project,
-                com.example.timeline.core.CoreEditEngine.deleteClips(state.project, validClipsToDelete.toList(), rippleMode = false).project,
-                validClipsToDelete.toList()
-            )
-        }
-        
-        if (cmd != null) {
-            val res = cmd.execute(state.project)
-            if (res.isSuccess) {
-                historyManager.pushCommand(cmd)
-                updateState(res.project)
-                selectClip(null)
-            }
+        if (clipsToDelete.isEmpty()) return
+        val ids = clipsToDelete.sorted()
+        val outcome = commitNativeTimelineEdits(
+            projectForEdit = state.project,
+            commands = listOf(
+                CoreV2EditCommand(
+                    kind = CoreV2EditKind.DELETE,
+                    clipIds = ids,
+                    ripple = if (ripple) CoreV2RippleScope.SAME_TRACK else CoreV2RippleScope.NONE
+                )
+            ),
+            commandName = if (ripple) "Ripple Delete" else "Delete Clip",
+            affectedClipIds = ids
+        )
+        if (outcome is CoreV2EditOutcome.Applied && outcome.project != state.project) {
+            selectClip(null)
         }
     }
     
@@ -877,38 +1023,21 @@ class TimelineViewModel(context: Context) : ViewModel() {
         updateState(p2)
     }
 
-    fun createCompoundClip() {
-        val state = _uiState.value
-        val clipId = state.selectedClipId ?: return
-        val trackAndClip = findClipAndTrack(state.project, clipId) ?: return
-        val cmd = CommandFactory.createCompoundClipCommand(
-            projectBefore = state.project,
-            clipIds = listOf(clipId),
-            newSequenceName = "Compound Clip",
-            destTrackId = trackAndClip.first.id
-        )
-        if (cmd != null) {
-            val res = cmd.execute(state.project)
-            if (res.isSuccess) {
-                historyManager.pushCommand(cmd)
-                updateState(res.project)
-                selectClip(null)
-            }
-        }
-    }
-
     fun splitAtPlayhead() {
         val state = _uiState.value
         val clipId = state.selectedClipId ?: return
-        val cmd = CommandFactory.createSplitCommand(state.project, clipId, _playheadFrame.value)
-        if (cmd != null) {
-            val res = cmd.execute(state.project)
-            if (res.isSuccess) {
-                historyManager.pushCommand(cmd)
-                updateState(res.project)
-                selectClip(null)
-            }
-        }
+        val command = SplitClipCommand(clipId, _playheadFrame.value, splitLinkedAudio = false)
+        val commands = command.nativeEditCommands(state.project)
+        if (commands.isEmpty()) return
+        val outcome = commitNativeTimelineEdits(
+            projectForEdit = state.project,
+            commands = commands,
+            commandName = command.commandName,
+            affectedClipIds = commands.flatMap { edit ->
+                edit.clipIds + listOfNotNull(edit.clipId, edit.otherClipId)
+            }.distinct()
+        )
+        if (outcome is CoreV2EditOutcome.Applied && outcome.project != state.project) selectClip(null)
     }
 
     fun moveSelectedClip(newStartFrame: Long) {
@@ -916,44 +1045,35 @@ class TimelineViewModel(context: Context) : ViewModel() {
         moveClip(clipId, newStartFrame)
     }
 
-    fun moveClip(clipId: String, newStartFrame: Long) {
-        val state = _uiState.value
-        val clipAndTrack = findClipAndTrack(state.project, clipId) ?: return
-        if (clipAndTrack.first.isLocked) return
-        val boundedStartFrame = newStartFrame.coerceAtLeast(0L)
-        if (clipAndTrack.second.timelineStart == boundedStartFrame) return
+    fun moveClip(clipId: String, newStartFrame: Long) =
+        moveClipGroup(clipId, newStartFrame, setOf(clipId))
 
-        val newClip = clipAndTrack.second.copy(timelineStart = boundedStartFrame)
-        val p1 = CoreEditEngine.deleteClips(state.project, listOf(clipId)).project
-        val p2 = CoreTimelineEngine.addClip(p1, clipAndTrack.first.id, newClip).project
-
-        val cmd = SnapshotCommand("Move Clip", state.project, p2, listOf(clipId))
-        historyManager.pushCommand(cmd)
-        updateState(p2)
+    fun moveClipGroup(clipId: String, newStartFrame: Long, clipIds: Set<String>) {
+        val project = _uiState.value.project
+        val clipAndTrack = findClipAndTrack(project, clipId) ?: return
+        commitNativeTimelineEdits(
+            projectForEdit = project,
+            commands = listOf(
+                CoreV2EditCommand(
+                    kind = CoreV2EditKind.MOVE,
+                    clipId = clipId,
+                    targetTrackId = clipAndTrack.first.id,
+                    targetFrame = newStartFrame,
+                    clipIds = (clipIds + clipId).sorted()
+                )
+            ),
+            commandName = if (clipIds.size > 1) "Move Linked Clips" else "Move Clip",
+            affectedClipIds = (clipIds + clipId).sorted()
+        )
     }
 
     fun trimClipStart(clipId: String, newStartFrame: Long, linkedSelectionEnabled: Boolean = false) {
-        val state = _uiState.value
-        val controller = LinkedSelectionController()
-        val clipsToTrim = if (linkedSelectionEnabled) controller.getLinkedClips(clipId, state.project, true) else setOf(clipId)
-        
-        val commands = clipsToTrim.mapNotNull { cid ->
-            val track = state.project.tracks.find { it.clips.any { c -> c.id == cid } } ?: return@mapNotNull null
-            if (track.isLocked) return@mapNotNull null
-            
-            val clip = state.project.tracks.flatMap { it.clips }.find { c -> c.id == clipId } ?: return@mapNotNull null
-            val delta = newStartFrame - clip.timelineStart
-            
-            val targetClip = state.project.tracks.flatMap { it.clips }.find { c -> c.id == cid } ?: return@mapNotNull null
-            val targetNewStart = targetClip.timelineStart + delta
-            
-            CommandFactory.createTrimStartCommand(state.project, cid, targetNewStart)
-        }
-        
-        if (commands.isNotEmpty()) {
-            val cmd = if (commands.size == 1) commands.first() else com.example.timeline.core.CompositeTimelineCommand("Trim Linked Clips", commands)
-            executeCommand(cmd)
-        }
+        commitLinkedTrim(
+            clipId = clipId,
+            targetFrame = newStartFrame,
+            trimStart = true,
+            linkedSelectionEnabled = linkedSelectionEnabled
+        )
     }
 
     fun trimSelectedClipStart(newStartFrame: Long) {
@@ -962,27 +1082,60 @@ class TimelineViewModel(context: Context) : ViewModel() {
     }
 
     fun trimClipEnd(clipId: String, newEndFrame: Long, linkedSelectionEnabled: Boolean = false) {
-        val state = _uiState.value
-        val controller = LinkedSelectionController()
-        val clipsToTrim = if (linkedSelectionEnabled) controller.getLinkedClips(clipId, state.project, true) else setOf(clipId)
-        
-        val commands = clipsToTrim.mapNotNull { cid ->
-            val track = state.project.tracks.find { it.clips.any { c -> c.id == cid } } ?: return@mapNotNull null
-            if (track.isLocked) return@mapNotNull null
+        commitLinkedTrim(
+            clipId = clipId,
+            targetFrame = newEndFrame,
+            trimStart = false,
+            linkedSelectionEnabled = linkedSelectionEnabled
+        )
+    }
 
-            val clip = state.project.tracks.flatMap { it.clips }.find { c -> c.id == clipId } ?: return@mapNotNull null
-            val delta = newEndFrame - clip.timelineEnd
-            
-            val targetClip = state.project.tracks.flatMap { it.clips }.find { c -> c.id == cid } ?: return@mapNotNull null
-            val targetNewEnd = targetClip.timelineEnd + delta
-            
-            CommandFactory.createTrimEndCommand(state.project, cid, targetNewEnd)
+    private fun commitLinkedTrim(
+        clipId: String,
+        targetFrame: Long,
+        trimStart: Boolean,
+        linkedSelectionEnabled: Boolean
+    ) {
+        val project = _uiState.value.project
+        val primary = findClipAndTrack(project, clipId)?.second ?: return
+        val primaryEdge = if (trimStart) primary.timelineStart else try {
+            Math.addExact(primary.timelineStart, primary.duration)
+        } catch (_: ArithmeticException) {
+            return
         }
-        
-        if (commands.isNotEmpty()) {
-            val cmd = if (commands.size == 1) commands.first() else com.example.timeline.core.CompositeTimelineCommand("Trim Linked Clips", commands)
-            executeCommand(cmd)
+        val delta = try {
+            Math.subtractExact(targetFrame, primaryEdge)
+        } catch (_: ArithmeticException) {
+            return
         }
+        val clipIds = if (linkedSelectionEnabled) {
+            LinkedSelectionController().getLinkedClips(clipId, project, true)
+        } else setOf(clipId)
+        val commands = mutableListOf<CoreV2EditCommand>()
+        for (id in clipIds.sorted()) {
+            val clip = findClipAndTrack(project, id)?.second ?: return
+            val edge = if (trimStart) clip.timelineStart else try {
+                Math.addExact(clip.timelineStart, clip.duration)
+            } catch (_: ArithmeticException) {
+                return
+            }
+            val target = try {
+                Math.addExact(edge, delta)
+            } catch (_: ArithmeticException) {
+                return
+            }
+            commands += CoreV2EditCommand(
+                kind = if (trimStart) CoreV2EditKind.TRIM_START else CoreV2EditKind.TRIM_END,
+                clipId = id,
+                targetFrame = target
+            )
+        }
+        commitNativeTimelineEdits(
+            projectForEdit = project,
+            commands = commands,
+            commandName = if (clipIds.size > 1) "Trim Linked Clips" else if (trimStart) "Trim Start" else "Trim End",
+            affectedClipIds = clipIds.sorted()
+        )
     }
 
     fun trimSelectedClipEnd(newEndFrame: Long) {
@@ -992,19 +1145,30 @@ class TimelineViewModel(context: Context) : ViewModel() {
 
     fun undo() {
         if (!historyManager.canUndo) return
+        val command = historyManager.nextUndoCommand
         val res = historyManager.undo(_uiState.value.project)
-        if (res.isSuccess) updateState(res.project)
+        if (res.isSuccess) {
+            if (command is NativeTimelineHistoryCommand) publishNativeProjectState(res.project)
+            else updateState(res.project)
+        }
     }
 
     fun redo() {
         if (!historyManager.canRedo) return
+        val command = historyManager.nextRedoCommand
         val res = historyManager.redo(_uiState.value.project)
-        if (res.isSuccess) updateState(res.project)
+        if (res.isSuccess) {
+            if (command is NativeTimelineHistoryCommand) publishNativeProjectState(res.project)
+            else updateState(res.project)
+        }
     }
 
     fun pushHistoryCommand(cmd: com.example.timeline.core.TimelineCommand) {
+        val project = _uiState.value.project
+        val result = cmd.execute(project)
+        if (!result.isSuccess || !TimelineCoreV2Adapter.hasSameNativeState(project, result.project)) return
         historyManager.pushCommand(cmd)
-        updateState(cmd.execute(_uiState.value.project).project)
+        updateState(result.project)
     }
 
     fun updateStateWithoutHistory(project: TimelineProject) {
@@ -1059,6 +1223,9 @@ class TimelineViewModel(context: Context) : ViewModel() {
     }
 
     fun createNewProject(settings: com.example.timeline.core.ProjectSettings) {
+        val previousProject = _uiState.value.project
+        TimelineCoreV2Adapter.clearHistory(previousProject.id)
+        historyManager.clear()
         _playheadFrame.value = 0L
         val newProject = TimelineProject(
             id = java.util.UUID.randomUUID().toString(),
@@ -1100,40 +1267,6 @@ class TimelineViewModel(context: Context) : ViewModel() {
         _uiState.update { it.copy(snapSettings = settings) }
     }
 
-    fun rippleEdit(clipId: String, deltaFrames: Long, isStart: Boolean = false) {
-        val state = _uiState.value
-        if (com.example.timeline.engine.native.NativeTimelineCore.isAvailable()) {
-            val newProject = com.example.timeline.engine.native.NativeEditAdapter.rippleEdit(state.project, clipId, isStart, deltaFrames)
-            val cmd = SnapshotCommand("Ripple Edit", state.project, newProject, listOf(clipId))
-            historyManager.pushCommand(cmd)
-            updateState(newProject)
-        } else {
-            val pair = findClipAndTrack(state.project, clipId) ?: return
-            if (isStart) trimSelectedClipStart(pair.second.timelineStart + deltaFrames)
-            else trimSelectedClipEnd(pair.second.timelineEnd + deltaFrames)
-        }
-    }
-
-    fun rollEdit(leftClipId: String, rightClipId: String, deltaFrames: Long) {
-        val state = _uiState.value
-        if (com.example.timeline.engine.native.NativeTimelineCore.isAvailable()) {
-            val newProject = com.example.timeline.engine.native.NativeEditAdapter.rollEdit(state.project, leftClipId, rightClipId, deltaFrames)
-            val cmd = SnapshotCommand("Roll Edit", state.project, newProject, listOf(leftClipId, rightClipId))
-            historyManager.pushCommand(cmd)
-            updateState(newProject)
-        }
-    }
-
-    fun rollEdit(clipId: String, deltaFrames: Long) {
-        val state = _uiState.value
-        val track = state.project.tracks.find { it.clips.any { c -> c.id == clipId } } ?: return
-        val clips = track.clips.sortedBy { it.timelineStart }
-        val idx = clips.indexOfFirst { it.id == clipId }
-        if (idx > 0) {
-            rollEdit(clips[idx - 1].id, clipId, deltaFrames)
-        }
-    }
-
     fun slipEdit(clipId: String, deltaFrames: Long) {
         executeCommand(com.example.timeline.core.SlipCommand(clipId, deltaFrames))
     }
@@ -1145,47 +1278,99 @@ class TimelineViewModel(context: Context) : ViewModel() {
     fun nudgeSelectedClip(dir: Int) {
         val cid = _uiState.value.selectedClipId ?: return
         val pair = findClipAndTrack(_uiState.value.project, cid) ?: return
-        moveSelectedClip(pair.second.timelineStart + dir)
+        val newStartFrame = try {
+            Math.addExact(pair.second.timelineStart, dir.toLong())
+        } catch (_: ArithmeticException) {
+            return
+        }
+        if (newStartFrame < 0L) return
+        moveSelectedClip(newStartFrame)
     }
 
     fun moveSelectedClipUpTrack() {
-        val cid = _uiState.value.selectedClipId ?: return
+        val clipId = _uiState.value.selectedClipId ?: return
         val project = _uiState.value.project
-        val (track, clip) = findClipAndTrack(project, cid) ?: return
-        val trackIndex = project.tracks.indexOf(track)
+        val (sourceTrack, clip) = findClipAndTrack(project, clipId) ?: return
+        val trackIndex = project.tracks.indexOf(sourceTrack)
         if (trackIndex > 0) {
-            val res = CoreTimelineEngine.moveClipToTrack(project, cid, track.id, project.tracks[trackIndex - 1].id, clip.timelineStart)
-            if (res.error == null) updateState(res.project)
+            commitNativeTimelineEdits(
+                projectForEdit = project,
+                commands = listOf(
+                    CoreV2EditCommand(
+                        kind = CoreV2EditKind.MOVE,
+                        clipId = clipId,
+                        targetTrackId = project.tracks[trackIndex - 1].id,
+                        targetFrame = clip.timelineStart
+                    )
+                ),
+                commandName = "Move Clip to Track",
+                affectedClipIds = listOf(clipId)
+            )
         }
     }
 
     fun moveSelectedClipDownTrack() {
-        val cid = _uiState.value.selectedClipId ?: return
+        val clipId = _uiState.value.selectedClipId ?: return
         val project = _uiState.value.project
-        val (track, clip) = findClipAndTrack(project, cid) ?: return
-        val trackIndex = project.tracks.indexOf(track)
+        val (sourceTrack, clip) = findClipAndTrack(project, clipId) ?: return
+        val trackIndex = project.tracks.indexOf(sourceTrack)
         if (trackIndex < project.tracks.size - 1) {
-            val res = CoreTimelineEngine.moveClipToTrack(project, cid, track.id, project.tracks[trackIndex + 1].id, clip.timelineStart)
-            if (res.error == null) updateState(res.project)
+            commitNativeTimelineEdits(
+                projectForEdit = project,
+                commands = listOf(
+                    CoreV2EditCommand(
+                        kind = CoreV2EditKind.MOVE,
+                        clipId = clipId,
+                        targetTrackId = project.tracks[trackIndex + 1].id,
+                        targetFrame = clip.timelineStart
+                    )
+                ),
+                commandName = "Move Clip to Track",
+                affectedClipIds = listOf(clipId)
+            )
         }
     }
 
     fun trimSelectedClipToPlayhead(start: Boolean) {
-        val cid = _uiState.value.selectedClipId ?: return
-        val project = _uiState.value.project
-        val (track, clip) = findClipAndTrack(project, cid) ?: return
-        // Simplistic assumption: grab the first playhead if not passed
-        val playhead = project.tracks.firstOrNull()?.clips?.firstOrNull()?.timelineStart ?: 0L 
-        if (start) {
-            trimSelectedClipStart(playhead)
-        } else {
-            trimSelectedClipEnd(playhead)
-        }
+        val clipId = _uiState.value.selectedClipId ?: return
+        val command = TimelinePlayheadCommands.trimAtPlayhead(
+            clipId = clipId,
+            playheadFrame = _playheadFrame.value.coerceAtLeast(0L),
+            start = start
+        ) ?: return
+        commitTimelineEdit(
+            commands = listOf(command),
+            commandName = if (start) "Trim Start to Playhead" else "Trim End to Playhead"
+        )
     }
 
     fun extendEditToPlayhead() {
         // Extend selected clip to playhead
         trimSelectedClipToPlayhead(start = false)
+    }
+
+    /** Changes clip/group protection through the native edit journal so undo/redo stays authoritative. */
+    fun setGroupLocked(clipId: String, locked: Boolean) {
+        val project = _uiState.value.project
+        val target = TimelineGroupLockController.targetFor(project, clipId) ?: return
+        val commandName = when {
+            target.linkedGroupId != null && locked -> "Lock Linked Group"
+            target.linkedGroupId != null -> "Unlock Linked Group"
+            locked -> "Lock Clip"
+            else -> "Unlock Clip"
+        }
+        commitNativeTimelineEdits(
+            projectForEdit = project,
+            commands = listOf(
+                CoreV2EditCommand(
+                    kind = CoreV2EditKind.SET_GROUP_LOCK,
+                    clipId = target.clipId,
+                    groupLocked = locked
+                )
+            ),
+            commandName = commandName,
+            affectedClipIds = target.memberClipIds
+        )
     }
 
     fun lockTrack(id: String, locked: Boolean) {

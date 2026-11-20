@@ -1,0 +1,34 @@
+Timeline Core v2 gate: 20261112T123122Z
+Branch: arena/a2d6ebb0-cinema-cut-pro
+Compiler: c++ (Debian 12.2.0-14+deb12u1) 12.2.0
+
+== Native export regression suite: python3 tools/run_native_export_tests.py
+Native export engine tests passed.
+mcraw preview renderer test passed
+DecoderTest passed
+DecoderGyroTest passed
+DecoderAccelerometerTest passed
+
+== Timeline Core v2 direct C++23 tests: ./tools/run_timeline_core_tests.sh
+Timeline Core v2 tests passed: 170596 assertions; 10,000 snap-oracle cases, 10,000 randomized multi-track history operations, and 10,000 single-clip undo/redo cycles.
+
+== C++23 conformance probe: ./tools/probe_cxx_conformance.sh
+Generated /home/user/Cinema-cut-pro/build/generated/cxx_features.hpp using c++ -std=c++23
+#pragma once
+#define TL_CXX2C_FLAG_AVAILABLE 0
+#define TL_CXX_FEATURE_PROBE_CPLUSPLUS 202100L
+#define TL_HAVE_STD_EXPECTED 1
+#define TL_HAVE_STD_MDSPAN 0
+#define TL_HAVE_STD_FORMAT 0
+#define TL_HAVE_STD_GENERATOR 0
+#define TL_HAVE_STD_FLAT_MAP 0
+#define TL_HAVE_STD_INPLACE_VECTOR 0
+#define TL_HAVE_STD_SIMD 0
+
+BLOCKED: CMake/CTest/Ninja unavailable (CMAKE_BIN=cmake, CTEST_BIN=ctest, NINJA_BIN=ninja); host debug/release/sanitizer/coverage/benchmark gates were not run.
+
+== Whitespace/error check: git diff --check
+
+BLOCKED: Java/JDK absent; Android Gradle tests and :app:assembleDebug cannot start.
+
+GATE BLOCKED/FAILED (exit 2)

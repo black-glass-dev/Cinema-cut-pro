@@ -122,6 +122,7 @@ fun ColorLayerStackPanel(
                             Slider(
                                 value = layer.opacity,
                                 onValueChange = { viewModel.updateLayerOpacity(clipId, layer.id, it) },
+                                onValueChangeFinished = { viewModel.endLayerOpacityChange() },
                                 valueRange = 0f..1f,
                                 modifier = Modifier.height(24.dp).padding(top = 4.dp)
                             )

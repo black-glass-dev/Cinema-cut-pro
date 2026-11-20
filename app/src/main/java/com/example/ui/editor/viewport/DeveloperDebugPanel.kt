@@ -103,8 +103,8 @@ fun DeveloperDebugPanel(
         Text("FPS: ${"%.1f".format(stats.uiFps)}", color = Color.White, fontSize = 10.sp)
         Text("Frame Time: ${"%.1f".format(stats.frameTimeMs)}ms (avg) / Memory: ${"%.1f".format(stats.memoryUsageMb)}MB", color = Color.White, fontSize = 10.sp)
         Text("Dropped Frames: ${stats.droppedFrames}", color = Color.White, fontSize = 10.sp)
-        val nativeTime = com.example.timeline.engine.native.NativeTimelineMetrics.lastLayoutTimeMs.collectAsState().value
-        Text("Native Layout: ${nativeTime}ms (Available: ${com.example.timeline.engine.native.NativeTimelineCore.isAvailable()})", color = Color.White, fontSize = 10.sp)
+        val layoutTime = com.example.timeline.ui.TimelineUiMetrics.lastLayoutTimeMs.collectAsState().value
+        Text("Timeline UI layout: ${layoutTime}ms (Core v2 available: ${com.example.timeline.core.TimelineCoreV2Adapter.isAvailable()})", color = Color.White, fontSize = 10.sp)
     }
 }
 

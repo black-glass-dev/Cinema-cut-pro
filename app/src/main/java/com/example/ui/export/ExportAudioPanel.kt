@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import com.example.timeline.core.TimelineProject
 import com.example.timeline.core.TrackType
 import com.example.timeline.export.model.ExportSettings
+import com.example.timeline.media.MotionCamRawFormat
 
 @Composable
 fun ExportAudioPanel(
@@ -40,16 +41,19 @@ fun ExportAudioPanel(
     val hasSeparateAudio = project?.tracks.orEmpty().any { track ->
         track.type == TrackType.AUDIO && !track.isMuted && track.clips.any { it.isEnabled }
     }
+    val hasMcrawSource = assetsByClip.filterNotNull().any { MotionCamRawFormat.isMcrawAsset(it) }
     val allClipsHaveAudio = activeClips.isNotEmpty() && assetsByClip.all { it?.metadata?.hasAudio == true }
     val audioExportable = activeVideoTrack?.isMuted == false &&
-        allClipsHaveAudio && embeddedAudioFormats.size == 1 &&
+        !hasMcrawSource && allClipsHaveAudio && embeddedAudioFormats.size == 1 &&
         embeddedAudioFormats.singleOrNull()?.let { (rate, channels) -> rate > 0 && channels in 1..2 } == true &&
         !hasSeparateAudio
     val audioSwitchEnabled = audioExportable || settings.includeAudio
 
     val status = when {
         project == null -> "AAC is the only audio codec supported by this export path."
+        !settings.includeAudio && hasMcrawSource -> "MotionCam RAW embedded PCM is not connected to export; this will be a silent video."
         !settings.includeAudio -> "Audio will be omitted; the exported MP4 will be silent."
+        hasMcrawSource -> "MotionCam RAW embedded PCM is not connected to this export path. Turn off Include audio to export its video."
         activeVideoTracks.size != 1 -> "Audio export requires exactly one visible video track. Turn off Include audio to export video only."
         activeVideoTrack?.isMuted == true -> "The video track is muted; the export will not include audio."
         activeClips.isEmpty() -> "No active video clips are available for audio export."

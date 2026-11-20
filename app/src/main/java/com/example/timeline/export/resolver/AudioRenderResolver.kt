@@ -8,16 +8,8 @@ class AudioRenderResolver(
     private val settings: ExportSettings
 ) {
     fun getActiveAudioClipsAtTime(presentationTimeUs: Long): List<RenderClipInstance> {
-        val resolver = TimelineRenderResolver(project, settings)
-        // Convert time to a frame index
-        val fps = settings.frameRate.floatValue
-        val projectFpsRational = project.settings.getFpsRational()
-        val projectFps = projectFpsRational.toFloat()
-        
-        val projectFrame = ExportFrameTimeMapper.timeUsToProjectFrame(presentationTimeUs, projectFpsRational)
-        val outputFrameIndex = ExportFrameTimeMapper.timeUsToProjectFrame(presentationTimeUs, com.example.timeline.core.Rational(fps.toInt(), 1))
-
-        val plan = resolver.createPlanForFrame(outputFrameIndex)
-        return plan.activeAudioLayers
+        val outputFrameIndex = ExportFrameTimeMapper.timeUsToFrame(presentationTimeUs, settings.frameRate)
+            ?: return emptyList()
+        return TimelineRenderResolver(project, settings).createPlanForFrame(outputFrameIndex).activeAudioLayers
     }
 }

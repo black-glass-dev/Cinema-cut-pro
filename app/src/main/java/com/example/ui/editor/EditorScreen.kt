@@ -1,24 +1,32 @@
 package com.example.ui.editor
 
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.unit.dp
-import com.example.timeline.ui.TimelineViewModel
-import com.example.ui.ColorAdjustmentViewModel
-import com.example.ui.ColorMatchViewModel
-import com.example.ui.scopes.ScopeViewModel
-import com.example.MainViewModel
-import com.example.timeline.engine.preview.TimelinePreviewController
-import com.example.ui.EditorTopBar
-
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.example.timeline.engine.preview.TimelinePreviewController
+import com.example.timeline.ui.TimelineViewModel
+import com.example.ui.ColorAdjustmentViewModel
+import com.example.ui.ColorMatchViewModel
+import com.example.ui.scopes.ScopeViewModel
 
 @Composable
 fun EditorScreen(
@@ -26,44 +34,32 @@ fun EditorScreen(
     colorAdjustmentViewModel: ColorAdjustmentViewModel,
     colorMatchViewModel: ColorMatchViewModel,
     scopeViewModel: ScopeViewModel,
-    mainViewModel: MainViewModel,
     editorViewModel: EditorViewModel,
     timelinePreviewController: TimelinePreviewController,
-    onExportClick: () -> Unit,
-    onDebugClick: () -> Unit,
-    showScopes: Boolean,
-    onToggleScopes: () -> Unit,
     launchers: com.example.timeline.ui.MediaImportLaunchers,
-    relinkLauncher: androidx.activity.compose.ManagedActivityResultLauncher<Array<String>, List<android.net.Uri>>,
-    onRelinkRequest: (String) -> Unit,
-    onOpenAdvancedTimeline: () -> Unit
+    onRelinkRequest: (String) -> Unit
 ) {
     val timelineUiState by timelineViewModel.uiState.collectAsState()
     val isPlaying by timelineViewModel.isPlaying.collectAsState()
-    val activeAsset by timelinePreviewController.activeAsset.collectAsState()
     val isSampling by colorAdjustmentViewModel.isEyedropperActive.collectAsState()
-    val scopeData by scopeViewModel.scopeData.collectAsState()
-    val isAnalyzingScopes by scopeViewModel.isAnalyzing.collectAsState()
-
-    val isProxyActive = activeAsset?.proxyStatus == com.example.timeline.media.ProxyStatus.READY
-
     var selectedTab by remember { mutableStateOf("Timeline") }
     var viewportWeight by remember { mutableFloatStateOf(0.4f) }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            PlaybackAwareVideoViewport(
-                timelineUiState = timelineUiState,
-                timelineViewModel = timelineViewModel,
-                editorViewModel = editorViewModel,
-                timelinePreviewController = timelinePreviewController,
-                isPlaying = isPlaying,
-                isSampling = isSampling,
-                onColorSampled = { r, g, b -> colorAdjustmentViewModel.applyEyedropperColor(r, g, b) },
-                onRelinkRequest = onRelinkRequest,
-                modifier = Modifier.weight(viewportWeight)
-            )
-        
+    Column(modifier = Modifier.fillMaxSize()) {
+        PlaybackAwareVideoViewport(
+            timelineUiState = timelineUiState,
+            timelineViewModel = timelineViewModel,
+            editorViewModel = editorViewModel,
+            timelinePreviewController = timelinePreviewController,
+            isPlaying = isPlaying,
+            isSampling = isSampling,
+            onColorSampled = { red, green, blue ->
+                colorAdjustmentViewModel.applyEyedropperColor(red, green, blue)
+            },
+            onRelinkRequest = onRelinkRequest,
+            modifier = Modifier.weight(viewportWeight)
+        )
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -72,10 +68,7 @@ fun EditorScreen(
                 .draggable(
                     orientation = Orientation.Vertical,
                     state = rememberDraggableState { delta ->
-                        // delta is roughly pixels, we need to convert to weight roughly
-                        // 1000 pixels is 1f weight roughly, so 0.001f per pixel
-                        val weightDelta = delta * 0.001f
-                        viewportWeight = (viewportWeight + weightDelta).coerceIn(0.2f, 0.8f)
+                        viewportWeight = (viewportWeight + delta * 0.001f).coerceIn(0.2f, 0.8f)
                     }
                 ),
             contentAlignment = Alignment.Center
@@ -90,46 +83,26 @@ fun EditorScreen(
 
         EditorToolTabs(
             selectedTab = selectedTab,
-            onTabSelected = { 
-                if (it == "Pro Timeline") {
-                    onOpenAdvancedTimeline()
-                } else {
-                    selectedTab = it 
-                }
-            }
+            onTabSelected = { selectedTab = it }
         )
 
         EditorBottomPanel(
             selectedTab = selectedTab,
             timelineViewModel = timelineViewModel,
-            colorAdjustmentViewModel = colorAdjustmentViewModel,
             colorMatchViewModel = colorMatchViewModel,
             scopeViewModel = scopeViewModel,
             timelinePreviewController = timelinePreviewController,
-            mainViewModel = mainViewModel,
             editorViewModel = editorViewModel,
             launchers = launchers,
             onRelinkRequest = onRelinkRequest,
-            modifier = Modifier.fillMaxWidth().weight(1f - viewportWeight)
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f - viewportWeight)
         )
-        }
-        if (showScopes) {
-            com.example.ui.colorgrade.ScopesPanel(
-                scopeData = scopeData,
-                isAnalyzing = isAnalyzingScopes,
-                onClose = onToggleScopes,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(12.dp)
-                    .widthIn(max = 480.dp)
-                    .fillMaxWidth()
-                    .heightIn(max = 320.dp)
-            )
-        }
     }
 }
 
-/** Collects the 30 fps playhead only inside the viewport subtree, not the editor shell. */
+/** Collects the playhead only within the video viewport subtree. */
 @Composable
 private fun PlaybackAwareVideoViewport(
     timelineUiState: com.example.timeline.ui.TimelineUiState,

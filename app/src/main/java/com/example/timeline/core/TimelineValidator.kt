@@ -1,5 +1,10 @@
 package com.example.timeline.core
 
+/** Deprecated duplicate Kotlin edit validation. All new edits must use Timeline Core v2. */
+@Deprecated(
+    message = "Compile guard: use TimelineCoreV2Adapter/Core v2 validation",
+    level = DeprecationLevel.ERROR
+)
 object TimelineValidator {
     fun validateClip(clip: TimelineClip): List<String> {
         val errors = mutableListOf<String>()

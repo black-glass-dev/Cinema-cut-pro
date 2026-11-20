@@ -3,11 +3,14 @@ package com.example.timeline.media
 import android.content.Context
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
+import com.example.timeline.core.Rational
+import com.example.timeline.core.TimelineFrameMath
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.math.BigDecimal
+import java.math.RoundingMode
 import kotlin.math.ceil
 import kotlin.math.ln
-import kotlin.math.roundToInt
 
 /** Reads container timing/track metadata without asking MediaExtractor to parse a .mcraw file. */
 class McrawMediaAnalyzer(private val context: Context) {
@@ -30,20 +33,30 @@ class McrawMediaAnalyzer(private val context: Context) {
                 NativeMcrawDecoder.frameTimestampNs(handle, index)
             }
             val positiveIntervalsNs = timestampsNs.asList()
-                .zipWithNext { earlier, later -> later - earlier }
+                .zipWithNext { earlier, later ->
+                    try {
+                        Math.subtractExact(later, earlier)
+                    } catch (_: ArithmeticException) {
+                        0L
+                    }
+                }
                 .filter { it > 0L }
             val medianIntervalNs = median(positiveIntervalsNs)
-            val nominalFrameRate = readNominalFrameRate(container)
-            val frameRate = (if (medianIntervalNs > 0L) {
-                (1_000_000_000.0 / medianIntervalNs.toDouble()).toFloat()
+            val frameRateRational = if (medianIntervalNs > 0L) {
+                MediaTimeMapping.frameRateFromIntervalNanoseconds(medianIntervalNs)
             } else {
-                nominalFrameRate
-            }).coerceIn(1f, 240f)
-            val frameRateRational = FrameRate((frameRate * 1000f).roundToInt().coerceAtLeast(1), 1000)
+                readNominalFrameRate(container)
+            }
             val durationUs = when {
-                timestampsNs.size > 1 && medianIntervalNs > 0L ->
-                    ((timestampsNs.last() - timestampsNs.first()).coerceAtLeast(0L) + medianIntervalNs) / 1000L
-                else -> (1_000_000.0 / frameRate).toLong().coerceAtLeast(1L)
+                timestampsNs.size > 1 && medianIntervalNs > 0L -> {
+                    val elapsedNs = Math.subtractExact(timestampsNs.last(), timestampsNs.first()).coerceAtLeast(0L)
+                    Math.addExact(elapsedNs, medianIntervalNs) / 1_000L
+                }
+                frameRateRational != null -> TimelineFrameMath.microsecondsFromFrames(
+                    1L,
+                    Rational(frameRateRational.numerator, frameRateRational.denominator)
+                ) ?: 0L
+                else -> 0L
             }
             val cadenceUs = timestampsNs.map { it / 1000L }
             val cadence = VariableFrameRateDetector.classify(cadenceUs)
@@ -73,7 +86,7 @@ class McrawMediaAnalyzer(private val context: Context) {
             val reportWarnings = buildList {
                 add("The native preview uses a lightweight Bayer demosaic. Playback renders at 480 px on the longest edge and may skip frames on slower devices rather than slowing the timeline. Basic exposure, temperature/tint, Lift/Gamma/Gain/Offset wheels, and three-zone color balance are previewed; curves, HSL, LUTs, and other advanced grades are not yet reflected.")
                 if (hasAudio) {
-                    add("Embedded PCM audio is detected and classified, but audio playback and export routing are not connected to the native preview yet.")
+                    add("Embedded PCM audio is detected, but MotionCam audio playback and AAC export are not connected; the current RAW export is video-only.")
                 }
                 if (hasGyro || hasAccelerometer) {
                     add("MotionCam sensor metadata detected: gyro=$hasGyro, accelerometer=$hasAccelerometer. Stabilization is not applied yet.")
@@ -162,13 +175,17 @@ class McrawMediaAnalyzer(private val context: Context) {
         }
     }
 
-    private fun readNominalFrameRate(container: JSONObject): Float {
+    private fun readNominalFrameRate(container: JSONObject): FrameRate? {
         val keys = listOf("frameRate", "fps", "captureFrameRate")
         for (key in keys) {
-            val value = container.optDouble(key, Double.NaN)
-            if (value.isFinite() && value in 1.0..240.0) return value.toFloat()
+            val value = container.optString(key, "").toBigDecimalOrNull() ?: continue
+            if (value < BigDecimal.ONE || value > BigDecimal.valueOf(240L)) continue
+            val milliFramesPerSecond = value.multiply(BigDecimal.valueOf(1_000L))
+                .setScale(0, RoundingMode.HALF_UP)
+                .toInt()
+            if (milliFramesPerSecond > 0) return FrameRate(milliFramesPerSecond, 1_000)
         }
-        return 30f
+        return null
     }
 
     private fun median(values: List<Long>): Long {
@@ -176,7 +193,9 @@ class McrawMediaAnalyzer(private val context: Context) {
         val sorted = values.sorted()
         val middle = sorted.size / 2
         return if (sorted.size % 2 == 0) {
-            ((sorted[middle - 1].toDouble() + sorted[middle].toDouble()) / 2.0).toLong()
+            val lower = sorted[middle - 1]
+            val upper = sorted[middle]
+            lower + (upper - lower) / 2L
         } else {
             sorted[middle]
         }

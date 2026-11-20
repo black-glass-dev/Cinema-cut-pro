@@ -4,6 +4,8 @@ import android.content.Context
 import android.media.MediaCodec
 import android.net.Uri
 import android.util.Log
+import com.example.timeline.core.Rational
+import com.example.timeline.core.TimelineFrameMath
 import com.example.timeline.core.TimelineProject
 import com.example.timeline.export.model.ExportJob
 import kotlinx.coroutines.Dispatchers
@@ -47,7 +49,9 @@ class VideoExportPipeline(
                     width = job.settings.resolutionWidth,
                     height = job.settings.resolutionHeight,
                     bitRate = targetBitRate,
-                    frameRate = job.settings.frameRate.floatValue.toInt(),
+                    frameRate = TimelineFrameMath.nominalFramesPerSecond(
+                        Rational(job.settings.frameRate.numerator, job.settings.frameRate.denominator)
+                    )?.toInt() ?: throw IllegalArgumentException("Invalid output frame rate"),
                     mimeType = when (job.settings.codec.name) {
                         "HEVC" -> android.media.MediaFormat.MIMETYPE_VIDEO_HEVC
                         "AV1" -> "video/av01"
@@ -85,8 +89,21 @@ class VideoExportPipeline(
                 }
 
                 val totalFrames = progressTracker.totalFrames
+                if (totalFrames <= 0L) throw IllegalStateException("The export contains no frames.")
                 val bufferInfo = MediaCodec.BufferInfo()
                 val audioBufferInfo = MediaCodec.BufferInfo()
+                val outputFrameRate = Rational(
+                    job.settings.frameRate.numerator,
+                    job.settings.frameRate.denominator
+                )
+                var lastVideoPresentationTimeUs = -1L
+                fun audioSampleBoundary(outputFrame: Long): Long = TimelineFrameMath.convertFrameCount(
+                    frameCount = outputFrame,
+                    sourceNumerator = outputFrameRate.numerator,
+                    sourceDenominator = outputFrameRate.denominator,
+                    projectNumerator = aSampleRate,
+                    projectDenominator = 1
+                ) ?: throw ArithmeticException("Audio sample boundary overflows Long")
 
                 for (frameIndex in 0 until totalFrames) {
                     if (cancellationToken.isCancelled()) {
@@ -98,6 +115,16 @@ class VideoExportPipeline(
                     val plan = resolver.createPlanForFrame(frameIndex)
                     var yuvBuffer: java.nio.ByteBuffer? = null
                     val presentationTimeUs = plan.outputTimeUs
+                    val expectedPresentationTimeUs = TimelineFrameMath.microsecondsFromFrames(
+                        frameIndex,
+                        outputFrameRate
+                    ) ?: throw ArithmeticException("Output frame timestamp overflows Long")
+                    if (plan.outputFrameIndex != frameIndex || presentationTimeUs != expectedPresentationTimeUs ||
+                        presentationTimeUs < 0L || presentationTimeUs <= lastVideoPresentationTimeUs
+                    ) {
+                        throw IllegalStateException("Output frame timestamps are invalid or not strictly increasing")
+                    }
+                    lastVideoPresentationTimeUs = presentationTimeUs
                     var dummyBufferUsed = false
                     var emptyBuf: java.nio.ByteBuffer? = null
                     
@@ -116,16 +143,21 @@ class VideoExportPipeline(
                         val targetTimeUs = topLayer.sourceTimeUs
                         var currentDecoded = decodedFrames[assetId]
                         
-                        // Check if we need to seek
-                        if (currentDecoded == null || currentDecoded.presentationTimeUs > targetTimeUs + 100000 || currentDecoded.presentationTimeUs < targetTimeUs - 1000000) {
+                        val seekAheadLimitUs = Math.addExact(targetTimeUs, 100_000L)
+                        val seekBehindLimitUs = Math.subtractExact(targetTimeUs, 1_000_000L)
+                        val advanceUntilUs = Math.subtractExact(targetTimeUs, 30_000L)
+                        // Check if we need to seek; all threshold arithmetic is checked.
+                        if (currentDecoded == null || currentDecoded.presentationTimeUs > seekAheadLimitUs ||
+                            currentDecoded.presentationTimeUs < seekBehindLimitUs
+                        ) {
                             source.seekTo(targetTimeUs)
                             currentDecoded?.let { source.releaseFrame(it.bufferIndex) }
                             currentDecoded = source.getNextFrame(10000)
                         }
-                        
-                        // Advance until we match or exceed target time (minus a small epsilon to avoid overshooting)
+
+                        // Advance until we match or exceed target time (minus a small epsilon to avoid overshooting).
                         var eos = false
-                        while (currentDecoded != null && currentDecoded.presentationTimeUs < targetTimeUs - 30000 && !eos) {
+                        while (currentDecoded != null && currentDecoded.presentationTimeUs < advanceUntilUs && !eos) {
                             source.releaseFrame(currentDecoded.bufferIndex)
                             val nextFrame = source.getNextFrame(10000)
                             if (nextFrame != null) {
@@ -177,10 +209,15 @@ class VideoExportPipeline(
                     }
                     
                     // 3. Process Audio
-                    val nextFrameTimeUs = ((frameIndex + 1) * 1000000.0 / job.settings.frameRate.floatValue).toLong()
-                    val durationUs = nextFrameTimeUs - presentationTimeUs
-                    val numSamples = (durationUs * aSampleRate / 1000000.0).toInt()
-                    val bytesToRead = numSamples * aChannels * 2
+                    val nextFrameIndex = Math.addExact(frameIndex, 1L)
+                    val startSample = audioSampleBoundary(frameIndex)
+                    val endSample = audioSampleBoundary(nextFrameIndex)
+                    val sampleCount = Math.subtractExact(endSample, startSample)
+                    if (sampleCount < 0L || sampleCount > Int.MAX_VALUE.toLong()) {
+                        throw ArithmeticException("Audio sample buffer exceeds the platform limit")
+                    }
+                    val numSamples = sampleCount.toInt()
+                    val bytesToRead = Math.multiplyExact(Math.multiplyExact(numSamples, aChannels), 2)
                     
                     if (bytesToRead > 0) {
                         val destAudioBuffer = ByteBuffer.allocateDirect(bytesToRead).order(ByteOrder.nativeOrder())

@@ -9,11 +9,20 @@ data class TimelineResult(
 
 object CoreTimelineEngine {
     fun addTrack(project: TimelineProject, track: TimelineTrack): TimelineResult {
+        if (track.id.isBlank()) return TimelineResult(project, "TL_E_INVALID_ARGUMENT")
+        if (project.tracks.any { it.id == track.id }) return TimelineResult(project, "TL_E_DUPLICATE_ID")
         return TimelineResult(project.copy(tracks = project.tracks + track))
     }
 
+    /** Track removal is metadata-only and may not silently delete clips or bypass clip locks. */
     fun removeTrack(project: TimelineProject, trackId: String): TimelineResult {
-        return TimelineResult(project.copy(tracks = project.tracks.filter { it.id != trackId }))
+        val track = project.tracks.firstOrNull { it.id == trackId }
+            ?: return TimelineResult(project, "TL_E_TRACK_NOT_FOUND")
+        if (track.isLocked) return TimelineResult(project, "TL_E_LOCKED_TRACK")
+        if (track.clips.isNotEmpty()) {
+            return TimelineResult(project, "TL_E_INVALID_ARGUMENT")
+        }
+        return TimelineResult(project.copy(tracks = project.tracks.filterNot { it.id == trackId }))
     }
 
     fun renameTrack(project: TimelineProject, trackId: String, newName: String): TimelineResult {
@@ -64,74 +73,64 @@ object CoreTimelineEngine {
     }
 
     fun addClip(project: TimelineProject, trackId: String, clip: TimelineClip): TimelineResult {
-        val trackIndex = project.tracks.indexOfFirst { it.id == trackId }
-        if (trackIndex == -1) return TimelineResult(project, "Track not found")
-        val track = project.tracks[trackIndex]
-        
-        if (track.isLocked) return TimelineResult(project, "Cannot add clip to locked track")
-        
-        val clipErrors = TimelineValidator.validateClip(clip)
-        if (clipErrors.isNotEmpty()) return TimelineResult(project, clipErrors.joinToString(", "))
-        
-        if (TimelineValidator.detectTrackCollision(track, clip)) {
-            return TimelineResult(project, "Overlap detected on non-layered track")
+        val insertedClip = clip.copy(trackId = trackId)
+        return when (val outcome = TimelineCoreV2Adapter.applyEdit(
+            project,
+            CoreV2EditCommand(
+                kind = CoreV2EditKind.INSERT,
+                targetTrackId = trackId,
+                insertedClip = insertedClip
+            )
+        )) {
+            is CoreV2EditOutcome.Applied -> TimelineResult(outcome.project)
+            is CoreV2EditOutcome.Rejected -> TimelineResult(project, outcome.errorCode)
         }
-
-        val updatedTrack = track.copy(clips = (track.clips + clip).sortedBy { it.timelineStart })
-        val newTracks = project.tracks.toMutableList().apply { this[trackIndex] = updatedTrack }
-        return TimelineResult(project.copy(tracks = newTracks))
     }
 
     fun moveClipToTrack(
-        project: TimelineProject, 
-        clipId: String, 
-        sourceTrackId: String, 
-        destTrackId: String, 
+        project: TimelineProject,
+        clipId: String,
+        sourceTrackId: String,
+        destTrackId: String,
         newTimelineStart: Long
     ): TimelineResult {
-        val sourceTrackIndex = project.tracks.indexOfFirst { it.id == sourceTrackId }
-        val destTrackIndex = project.tracks.indexOfFirst { it.id == destTrackId }
-        
-        if (sourceTrackIndex == -1 || destTrackIndex == -1) return TimelineResult(project, "Track not found")
-        
-        val sourceTrack = project.tracks[sourceTrackIndex]
-        val destTrack = project.tracks[destTrackIndex]
-        
-        if (sourceTrack.isLocked) return TimelineResult(project, "Source track is locked")
-        if (destTrack.isLocked) return TimelineResult(project, "Destination track is locked")
-        
-        val clip = sourceTrack.clips.find { it.id == clipId } ?: return TimelineResult(project, "Clip not found")
-        
-        // Simple type compatibility check: prevent Video <-> Audio moves
-        val incompatible = (sourceTrack.type == TrackType.VIDEO && destTrack.type == TrackType.AUDIO) ||
-                           (sourceTrack.type == TrackType.AUDIO && destTrack.type == TrackType.VIDEO)
-        if (incompatible) {
-            return TimelineResult(project, "Incompatible track type")
+        val sourceTrack = project.tracks.firstOrNull { it.id == sourceTrackId }
+            ?: return TimelineResult(project, "TL_E_TRACK_NOT_FOUND")
+        if (sourceTrack.clips.none { it.id == clipId }) {
+            return TimelineResult(project, "TL_E_CLIP_NOT_FOUND")
         }
+        return moveClips(project, clipId, destTrackId, newTimelineStart, setOf(clipId))
+    }
 
-        val updatedClip = clip.copy(timelineStart = newTimelineStart, trackId = destTrackId)
-
-        // Validate overlap on destination
-        // Temporary filter out the clip itself if we are moving within the SAME track
-        val destTrackForValidation = if (sourceTrackId == destTrackId) {
-            destTrack.copy(clips = destTrack.clips.filter { it.id != clipId })
-        } else destTrack
-
-        if (TimelineValidator.detectTrackCollision(destTrackForValidation, updatedClip)) {
-             return TimelineResult(project, "Overlap detected on destination track")
+    /** One native Move command preserves the relative offset of every selected clip atomically. */
+    fun moveClips(
+        project: TimelineProject,
+        primaryClipId: String,
+        targetTrackId: String,
+        primaryNewStartFrame: Long,
+        clipIds: Set<String>
+    ): TimelineResult {
+        val sourceTrack = project.tracks.firstOrNull { track ->
+            track.clips.any { it.id == primaryClipId }
+        } ?: return TimelineResult(project, "TL_E_CLIP_NOT_FOUND")
+        val destination = project.tracks.firstOrNull { it.id == targetTrackId }
+            ?: return TimelineResult(project, "TL_E_TRACK_NOT_FOUND")
+        val incompatible = (sourceTrack.type == TrackType.VIDEO && destination.type == TrackType.AUDIO) ||
+            (sourceTrack.type == TrackType.AUDIO && destination.type == TrackType.VIDEO)
+        if (incompatible) return TimelineResult(project, "TL_E_INVALID_ARGUMENT")
+        val ids = (clipIds + primaryClipId).sorted()
+        return when (val outcome = TimelineCoreV2Adapter.applyEdit(
+            project,
+            CoreV2EditCommand(
+                kind = CoreV2EditKind.MOVE,
+                clipId = primaryClipId,
+                targetTrackId = targetTrackId,
+                targetFrame = primaryNewStartFrame,
+                clipIds = ids
+            )
+        )) {
+            is CoreV2EditOutcome.Applied -> TimelineResult(outcome.project)
+            is CoreV2EditOutcome.Rejected -> TimelineResult(project, outcome.errorCode)
         }
-
-        val newSourceClips = sourceTrack.clips.filter { it.id != clipId }
-        val newDestClips = if (sourceTrackId == destTrackId) {
-            newSourceClips + updatedClip
-        } else {
-            destTrack.clips + updatedClip
-        }.sortedBy { it.timelineStart }
-
-        val newTracks = project.tracks.toMutableList()
-        newTracks[sourceTrackIndex] = sourceTrack.copy(clips = newSourceClips)
-        newTracks[destTrackIndex] = destTrack.copy(clips = newDestClips)
-
-        return TimelineResult(project.copy(tracks = newTracks))
     }
 }

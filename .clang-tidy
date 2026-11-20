@@ -1,0 +1,10 @@
+Checks: >-
+  -*,
+  bugprone-*,
+  cppcoreguidelines-*,
+  modernize-*,
+  performance-*,
+  portability-*
+WarningsAsErrors: ''
+HeaderFilterRegex: 'app/src/main/cpp/timeline_core_v2/.*'
+FormatStyle: file

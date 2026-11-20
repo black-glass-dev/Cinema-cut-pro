@@ -1,5 +1,6 @@
 package com.example.timeline.engine.edit
 
+import com.example.timeline.core.CoreV2EditKind
 import com.example.timeline.core.ProjectFrameRatePreset
 import com.example.timeline.core.ProjectSettings
 import com.example.timeline.core.TimelineClip
@@ -12,6 +13,8 @@ import com.example.timeline.media.MediaAssetType
 import com.example.timeline.media.MediaMetadata
 import com.example.timeline.media.VideoStreamInfo
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AddToTimelineControllerTest {
@@ -56,35 +59,34 @@ class AddToTimelineControllerTest {
         )
     )
 
+    private fun plan(
+        project: TimelineProject = project(),
+        asset: MediaAsset = videoAsset(),
+        playheadFrame: Long = 0L
+    ) = requireNotNull(
+        AddToTimelineController.createClipInsertionPlan(project, asset, playheadFrame)
+    )
+
     @Test
-    fun motionCamRawAssetWithCustomMimeCreatesVideoClip() {
+    fun motionCamRawAssetWithCustomMimeCreatesVideoInsertRequest() {
         val mcrawAsset = videoAsset().copy(
             displayName = "Video 1",
             mimeType = com.example.timeline.media.MotionCamRawFormat.MIME_TYPE,
             assetType = MediaAssetType.VIDEO,
             metadata = videoAsset().metadata.copy(hasVideo = true, hasAudio = true)
         )
+        val insertion = plan(asset = mcrawAsset, playheadFrame = 20L)
 
-        val (updated, clip) = AddToTimelineController.createAddClipCommand(
-            project = project(),
-            mediaAsset = mcrawAsset,
-            playheadFrame = 20L
-        )
-
-        assertEquals(TrackType.VIDEO, updated.tracks.single().type)
-        assertEquals(mcrawAsset.assetId, clip.mediaId)
-        assertEquals(0L, clip.timelineStart)
+        assertEquals(TrackType.VIDEO, insertion.baseProject.tracks.single().type)
+        assertEquals(mcrawAsset.assetId, insertion.clip.mediaId)
+        assertEquals(0L, insertion.clip.timelineStart)
+        assertEquals(CoreV2EditKind.INSERT, insertion.command.kind)
+        assertTrue(insertion.baseProject.tracks.single().clips.isEmpty())
     }
 
     @Test
     fun firstImportedVideoStartsAtFrameZeroEvenWhenPlayheadIsNotAtZero() {
-        val (_, clip) = AddToTimelineController.createAddClipCommand(
-            project = project(),
-            mediaAsset = videoAsset(),
-            playheadFrame = 16L
-        )
-
-        assertEquals(0L, clip.timelineStart)
+        assertEquals(0L, plan(playheadFrame = 16L).clip.timelineStart)
     }
 
     @Test
@@ -105,14 +107,7 @@ class AddToTimelineControllerTest {
                 )
             )
         )
-
-        val (_, clip) = AddToTimelineController.createAddClipCommand(
-            project = project(listOf(audioTrack)),
-            mediaAsset = videoAsset(),
-            playheadFrame = 72L
-        )
-
-        assertEquals(0L, clip.timelineStart)
+        assertEquals(0L, plan(project = project(listOf(audioTrack)), playheadFrame = 72L).clip.timelineStart)
     }
 
     @Test
@@ -134,21 +129,17 @@ class AddToTimelineControllerTest {
                 )
             )
         )
+        val insertion = plan(project = project(listOf(disabledVideoTrack)), playheadFrame = 72L)
 
-        val (updated, clip) = AddToTimelineController.createAddClipCommand(
-            project = project(listOf(disabledVideoTrack)),
-            mediaAsset = videoAsset(),
-            playheadFrame = 72L
-        )
-
-        assertEquals(0L, clip.timelineStart)
-        org.junit.Assert.assertTrue(clip.trackId != disabledVideoTrack.id)
-        assertEquals(2, updated.tracks.size)
-        assertEquals("disabled-clip", updated.tracks.first().clips.single().id)
+        assertEquals(0L, insertion.clip.timelineStart)
+        assertTrue(insertion.clip.trackId != disabledVideoTrack.id)
+        assertEquals(2, insertion.baseProject.tracks.size)
+        assertEquals("disabled-clip", insertion.baseProject.tracks.first().clips.single().id)
+        assertTrue(insertion.baseProject.tracks.last().clips.isEmpty())
     }
 
     @Test
-    fun laterImportedVideoStillUsesPlayheadWhenThereIsNoCollision() {
+    fun laterImportedVideoUsesPlayheadWhenThereIsNoCollision() {
         val videoTrack = TimelineTrack(
             id = "video-track",
             name = "Video 1",
@@ -165,13 +156,47 @@ class AddToTimelineControllerTest {
                 )
             )
         )
+        val insertion = plan(project = project(listOf(videoTrack)), playheadFrame = 120L)
+        assertEquals(120L, insertion.clip.timelineStart)
+    }
 
-        val (_, clip) = AddToTimelineController.createAddClipCommand(
-            project = project(listOf(videoTrack)),
-            mediaAsset = videoAsset(),
-            playheadFrame = 120L
+    @Test
+    fun unknownDurationRejectsInsteadOfInventingAPlaceholder() {
+        val unknownDurationAsset = videoAsset().copy(
+            metadata = videoAsset().metadata.copy(
+                durationUs = 0L,
+                durationFramesInSourceRate = 0L,
+                exactFrameRate = null,
+                estimatedFrameRate = null
+            )
         )
+        assertNull(AddToTimelineController.createClipInsertionPlan(project(), unknownDurationAsset, 0L))
+    }
 
-        assertEquals(120L, clip.timelineStart)
+    @Test
+    fun overflowingTimelinePlacementRejectsWithoutCreatingAClip() {
+        val videoTrack = TimelineTrack(
+            id = "video-track",
+            name = "Video 1",
+            type = TrackType.VIDEO,
+            clips = listOf(
+                TimelineClip(
+                    id = "existing",
+                    trackId = "video-track",
+                    mediaId = "existing-media",
+                    name = "existing.mp4",
+                    sourceIn = 0L,
+                    sourceOut = 100L,
+                    timelineStart = 0L
+                )
+            )
+        )
+        assertNull(
+            AddToTimelineController.createClipInsertionPlan(
+                project = project(listOf(videoTrack)),
+                mediaAsset = videoAsset(),
+                playheadFrame = Long.MAX_VALUE - 10L
+            )
+        )
     }
 }

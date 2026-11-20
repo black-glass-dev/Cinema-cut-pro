@@ -1,0 +1,20 @@
+Command: PATH=/tmp/arena-timeline-tools/bin:$PATH PYTHONPATH=/tmp/arena-timeline-tools cmake --preset host-release && cmake --build --preset host-release && ctest --preset host-release --no-tests=error
+Preset CMake variables:
+
+  CMAKE_BUILD_TYPE="Release"
+  TL_BUILD_TESTS="ON"
+
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/user/Cinema-cut-pro/build/cmake/host-release
+[1/4] Building CXX object app/src/main/cpp/timeline_core_v2/CMakeFiles/timeline_core_v2_tests.dir/tests/timeline_core_test.cpp.o
+[2/4] Building CXX object app/src/main/cpp/timeline_core_v2/CMakeFiles/timeline_core_v2.dir/src/timeline_core.cpp.o
+[3/4] Linking CXX static library app/src/main/cpp/timeline_core_v2/libtimeline_core_v2.a
+[4/4] Linking CXX executable app/src/main/cpp/timeline_core_v2/timeline_core_v2_tests
+Test project /home/user/Cinema-cut-pro/build/cmake/host-release
+    Start 1: timeline_core_v2_tests
+1/1 Test #1: timeline_core_v2_tests ...........   Passed    0.02 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.02 sec

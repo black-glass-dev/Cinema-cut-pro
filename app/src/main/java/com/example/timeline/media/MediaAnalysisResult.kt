@@ -5,7 +5,7 @@ data class MediaAnalysisResult(
     val width: Int,
     val height: Int,
     val rotation: Int,
-    val frameRate: Float,
+    val frameRate: Float?,
     val defaultMimeType: String,
     val videoStreams: List<VideoStreamInfo>,
     val audioStreams: List<AudioStreamInfo>,

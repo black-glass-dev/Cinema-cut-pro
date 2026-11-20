@@ -7,57 +7,68 @@ class SplitClipCommand(
     override val commandName: String = "Split Clip",
     override val timestamp: Long = System.currentTimeMillis()
 ) : TimelineCommand {
-    
     private var projectBefore: TimelineProject? = null
     private var projectAfter: TimelineProject? = null
     private var _affectedIds: List<String> = listOf(clipId)
-    
+
     override val affectedClipIds: List<String> get() = _affectedIds
+
+    /** Builds one atomic native command batch for the requested split and linked clips. */
+    fun nativeEditCommands(project: TimelineProject): List<CoreV2EditCommand> {
+        val primary = findClip(project, clipId) ?: return emptyList()
+        val candidates = if (splitLinkedAudio && primary.mediaId.isNotEmpty()) {
+            project.tracks.asSequence().flatMap { it.clips.asSequence() }
+                .filter { candidate ->
+                    candidate.id == primary.id ||
+                        (candidate.mediaId == primary.mediaId &&
+                            candidate.timelineStart == primary.timelineStart &&
+                            candidate.sourceIn == primary.sourceIn)
+                }
+                .distinctBy { it.id }
+                .filter { candidate -> isSplitInside(candidate, splitFrame) }
+                .toList()
+        } else {
+            listOf(primary).filter { isSplitInside(it, splitFrame) }
+        }
+        return candidates.map { candidate ->
+            CoreV2EditCommand(
+                kind = CoreV2EditKind.SPLIT,
+                clipId = candidate.id,
+                otherClipId = java.util.UUID.randomUUID().toString(),
+                targetFrame = splitFrame
+            )
+        }
+    }
 
     override fun execute(project: TimelineProject): TimelineResult {
         projectBefore = project
-        
-        var currentProject = project
-        val clipToSplit = currentProject.tracks.flatMap { it.clips }.find { it.id == clipId }
-            ?: return TimelineResult(currentProject, "Clip not found")
-            
-        // First split the target clip
-        val splitRes = CoreEditEngine.splitClipAtFrame(currentProject, clipId, splitFrame)
-        if (!splitRes.isSuccess) {
-            return TimelineResult(currentProject, splitRes.error)
+        val commands = nativeEditCommands(project)
+        if (commands.isEmpty()) return TimelineResult(project, "TL_E_INVALID_EDIT")
+        val newIds = commands.mapNotNull { it.otherClipId }
+        val result = TimelineCoreV2Adapter.applyEdits(project, commands)
+            .toV2SplitResult(project, newIds)
+        if (result.isSuccess) {
+            projectAfter = result.project
+            _affectedIds = commands.mapNotNull { it.clipId } + newIds
         }
-        
-        currentProject = splitRes.project
-        val allNewIds = splitRes.newClipIds.toMutableList()
-        
-        // If splitLinkedAudio is true, look for linked clips and split them too
-        if (splitLinkedAudio && clipToSplit.mediaId.isNotEmpty()) {
-            // A clip is considered linked if it has the same mediaId and overlaps the splitFrame
-            // We just check if it's playing the exact same media at the same time.
-            // Wait, typical linking in standard NLE: same media, same timelineStart and sourceIn
-            val linkedClips = currentProject.tracks.flatMap { it.clips }
-                .filter { it.id != clipId && it.id !in allNewIds && it.mediaId == clipToSplit.mediaId && it.timelineStart == clipToSplit.timelineStart && it.sourceIn == clipToSplit.sourceIn }
-            
-            for (linked in linkedClips) {
-                val linkRes = CoreEditEngine.splitClipAtFrame(currentProject, linked.id, splitFrame)
-                if (linkRes.isSuccess) {
-                    currentProject = linkRes.project
-                    allNewIds.addAll(linkRes.newClipIds)
-                }
-            }
-        }
-        
-        projectAfter = currentProject
-        _affectedIds = listOf(clipId) + allNewIds
-        
-        return TimelineResult(currentProject)
+        return TimelineResult(result.project, result.error)
     }
 
-    override fun undo(project: TimelineProject): TimelineResult {
-        return TimelineResult(projectBefore ?: project)
-    }
+    override fun undo(project: TimelineProject): TimelineResult =
+        TimelineResult(projectBefore ?: project)
 
-    override fun redo(project: TimelineProject): TimelineResult {
-        return TimelineResult(projectAfter ?: project)
+    override fun redo(project: TimelineProject): TimelineResult =
+        TimelineResult(projectAfter ?: project)
+
+    private fun findClip(project: TimelineProject, id: String): TimelineClip? =
+        project.tracks.asSequence().flatMap { it.clips.asSequence() }.firstOrNull { it.id == id }
+
+    private fun isSplitInside(clip: TimelineClip, frame: Long): Boolean {
+        val end = try {
+            Math.addExact(clip.timelineStart, clip.duration)
+        } catch (_: ArithmeticException) {
+            return false
+        }
+        return frame > clip.timelineStart && frame < end
     }
 }

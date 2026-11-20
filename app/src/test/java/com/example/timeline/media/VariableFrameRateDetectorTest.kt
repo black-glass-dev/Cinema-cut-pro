@@ -77,6 +77,19 @@ class VariableFrameRateDetectorTest {
     }
 
     @Test
+    fun cadenceAnalysisReturnsIntegerMedianEvenWhenClassificationIsUnknown() {
+        val timestampsUs = listOf(0L, 33_333L, 66_667L, 100_000L)
+        val analysis = VariableFrameRateDetector.analyze(timestampsUs)
+
+        assertEquals(FrameRateCadence.UNKNOWN, analysis.cadence)
+        assertEquals(33_333L, analysis.medianIntervalUs)
+        assertEquals(
+            FrameRate(1_000_000, 33_333),
+            MediaTimeMapping.frameRateFromIntervalMicroseconds(33_333L)
+        )
+    }
+
+    @Test
     fun failedTimestampProbeRemainsUnknown() {
         assertEquals(FrameRateCadence.UNKNOWN, VariableFrameRateDetector.classifySegments(emptyList()))
     }

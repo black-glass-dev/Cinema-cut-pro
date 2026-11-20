@@ -4,9 +4,17 @@ import com.example.timeline.core.TimelineProject
 import com.example.timeline.core.TimelineSnapSettings
 import com.example.timeline.core.ProjectSettings
 
+private fun createInitialEditorProject(): TimelineProject {
+    val projectId = java.util.UUID.randomUUID().toString()
+    return TimelineProject(
+        id = projectId,
+        settings = ProjectSettings(projectId = projectId, projectName = "Untitled")
+    )
+}
+
 data class TimelineUiState(
-    val showProjectSetup: Boolean = true,
-    val project: TimelineProject = TimelineProject(settings = ProjectSettings("new", "New")),
+    val showProjectSetup: Boolean = false,
+    val project: TimelineProject = createInitialEditorProject(),
     val pixelsPerFrame: Float = 2f,
     val selectedClipId: String? = null,
     val selectedClipIds: Set<String> = emptySet(),

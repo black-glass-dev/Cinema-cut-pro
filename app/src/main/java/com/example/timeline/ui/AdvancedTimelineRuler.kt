@@ -9,14 +9,16 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.unit.dp
-import com.example.timeline.engine.native.advanced.NativeAdvancedTimelineCore
+import com.example.timeline.core.Rational
+import kotlin.math.ceil
+import kotlin.math.floor
 
 @Composable
 fun AdvancedTimelineRuler(
     scrollX: Float,
     viewportWidth: Int,
     pixelsPerFrame: Float,
-    frameRate: com.example.timeline.core.Rational,
+    frameRate: Rational,
     modifier: Modifier = Modifier
 ) {
     Canvas(
@@ -26,84 +28,58 @@ fun AdvancedTimelineRuler(
     ) {
         val width = size.width
         val height = size.height
-
-        // Draw bottom border
         drawLine(
             color = Color.DarkGray,
             start = Offset(0f, height),
             end = Offset(width, height),
             strokeWidth = 1.dp.toPx()
         )
+        if (!pixelsPerFrame.isFinite() || pixelsPerFrame <= 0f ||
+            frameRate.numerator <= 0 || frameRate.denominator <= 0
+        ) return@Canvas
 
-        val ticks = NativeAdvancedTimelineCore.calculateRulerTicksOrNull(
-            scrollX,
-            width.toInt(),
-            pixelsPerFrame,
-            frameRate.toFloat().toInt()
-        )
-        if (ticks != null && ticks.size % 2 == 0) {
-            var i = 0
-            while (i + 1 < ticks.size) {
-                val tickX = ticks[i]
-                val type = ticks[i + 1].toInt()
-                
-                if (tickX in 0f..width) {
-                    val isMajor = type == 1
-                    val tickHeight = if (isMajor) height * 0.5f else height * 0.25f
-                    val yStart = height - tickHeight
-                    
-                    drawLine(
-                        color = Color.Gray,
-                        start = Offset(tickX, yStart),
-                        end = Offset(tickX, height),
-                        strokeWidth = 1f
-                    )
-                    
-                    if (isMajor) {
-                        val frame = NativeAdvancedTimelineCore.xToFrame(tickX + scrollX, pixelsPerFrame)
-                        val timeStr = TimecodeFormatter.formatTimecode(frame, frameRate)
-                        
-                        drawContext.canvas.nativeCanvas.drawText(
-                            timeStr,
-                            tickX + 4.dp.toPx(),
-                            height - tickHeight - 4.dp.toPx(),
-                            android.graphics.Paint().apply {
-                                color = android.graphics.Color.LTGRAY
-                                textSize = 10.dp.toPx()
-                                isAntiAlias = true
-                            }
-                        )
-                    }
-                }
-                i += 2
-            }
-        } else {
-            if (com.example.BuildConfig.DEBUG) {
-                android.util.Log.d("AdvancedTimelineRuler", "Using Kotlin fallback for ruler ticks")
-            }
-            val fps = frameRate.toFloat().toInt().coerceAtLeast(1)
-            val stepFrames = if (pixelsPerFrame * fps < 5f) fps * 10 else if (pixelsPerFrame * fps < 20f) fps * 5 else fps
-            val startFrame = ((scrollX / pixelsPerFrame).toLong() / stepFrames) * stepFrames
-            val endFrame = ((scrollX + width) / pixelsPerFrame).toLong() + 1
-            
-            for (f in startFrame..endFrame step stepFrames.toLong()) {
-                val tickX = NativeAdvancedTimelineCore.frameToX(f, pixelsPerFrame) - scrollX
-                val isMajor = (f % (fps * 10)) == 0L
+        val nominalFps = ((frameRate.numerator.toLong() + frameRate.denominator / 2L) /
+            frameRate.denominator).coerceAtLeast(1L)
+        val startFrame = floor((scrollX.coerceAtLeast(0f) / pixelsPerFrame).toDouble())
+            .toLong().coerceAtLeast(0L)
+        val endFrame = ceil(((scrollX.coerceAtLeast(0f) + width) / pixelsPerFrame).toDouble())
+            .toLong().coerceAtLeast(startFrame)
+        val stepFrames = when {
+            pixelsPerFrame * nominalFps.toFloat() < 5f -> nominalFps * 10L
+            pixelsPerFrame * nominalFps.toFloat() < 20f -> nominalFps * 5L
+            else -> nominalFps
+        }.coerceAtLeast(1L)
+        val firstTick = startFrame / stepFrames * stepFrames
+        val paint = android.graphics.Paint().apply {
+            color = android.graphics.Color.LTGRAY
+            textSize = 10.dp.toPx()
+            isAntiAlias = true
+        }
+
+        var frame = firstTick
+        while (frame <= endFrame) {
+            val x = TimelineUiGeometry.frameToX(frame, pixelsPerFrame) - scrollX
+            if (x in 0f..width) {
+                val isMajor = frame % (nominalFps * 10L) == 0L
                 val tickHeight = if (isMajor) height * 0.5f else height * 0.25f
                 drawLine(
                     color = Color.Gray,
-                    start = Offset(tickX, height - tickHeight),
-                    end = Offset(tickX, height),
+                    start = Offset(x, height - tickHeight),
+                    end = Offset(x, height),
                     strokeWidth = 1f
                 )
                 if (isMajor) {
-                    val timeStr = TimecodeFormatter.formatTimecode(f, frameRate)
+                    val timecode = TimecodeFormatter.formatTimecode(frame, frameRate)
                     drawContext.canvas.nativeCanvas.drawText(
-                        timeStr, tickX + 4.dp.toPx(), height - tickHeight - 4.dp.toPx(),
-                        android.graphics.Paint().apply { color = android.graphics.Color.LTGRAY; textSize = 10.dp.toPx(); isAntiAlias = true }
+                        timecode,
+                        x + 4.dp.toPx(),
+                        height - tickHeight - 4.dp.toPx(),
+                        paint
                     )
                 }
             }
+            if (Long.MAX_VALUE - frame < stepFrames) break
+            frame += stepFrames
         }
     }
 }

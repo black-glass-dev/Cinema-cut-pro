@@ -1,5 +1,6 @@
 package com.example.timeline.export.validation
 
+import com.example.timeline.core.CoreV2EditKind
 import com.example.timeline.core.ProjectFrameRatePreset
 import com.example.timeline.core.ProjectSettings
 import com.example.timeline.core.TimelineClip
@@ -22,7 +23,7 @@ class TimelineExportAutoFixerTest {
     )
 
     @Test
-    fun compactsGappedClipsFromFrameZeroAndPreservesSourceTrims() {
+    fun emitsOrderedNativeMovesAndPreservesSourceTrimFields() {
         val first = TimelineClip(
             id = "first",
             trackId = "video",
@@ -45,15 +46,17 @@ class TimelineExportAutoFixerTest {
             TimelineTrack("video", "Video 1", TrackType.VIDEO, clips = listOf(first, second))
         )
 
-        val repaired = TimelineExportAutoFixer.compactVisibleVideoTrack(original)!!
-        val clips = repaired.tracks.single().clips.associateBy { it.id }
-
-        assertEquals(0L, clips.getValue("second").timelineStart)
-        assertEquals(60L, clips.getValue("first").timelineStart)
-        assertEquals(first.sourceIn, clips.getValue("first").sourceIn)
-        assertEquals(first.sourceOut, clips.getValue("first").sourceOut)
-        assertEquals(second.sourceIn, clips.getValue("second").sourceIn)
-        assertEquals(second.sourceOut, clips.getValue("second").sourceOut)
+        val commands = TimelineExportAutoFixer.compactVisibleVideoTrackCommands(original)!!
+        assertEquals(listOf("first"), commands.map { it.clipId })
+        assertEquals(listOf(CoreV2EditKind.MOVE), commands.map { it.kind })
+        assertEquals(listOf("video"), commands.map { it.targetTrackId })
+        assertEquals(listOf(60L), commands.map { it.targetFrame })
+        assertEquals(12L, first.sourceIn)
+        assertEquals(52L, first.sourceOut)
+        assertEquals(30L, second.sourceIn)
+        assertEquals(90L, second.sourceOut)
+        // Command construction is read-only; only the native commit may alter the project.
+        assertEquals(80L, original.tracks.single().clips.first { it.id == "first" }.timelineStart)
     }
 
     @Test
@@ -74,7 +77,7 @@ class TimelineExportAutoFixerTest {
             TrackType.VIDEO,
             clips = listOf(lockedClip)
         )
-        assertNull(TimelineExportAutoFixer.compactVisibleVideoTrack(project(video1)))
+        assertNull(TimelineExportAutoFixer.compactVisibleVideoTrackCommands(project(video1)))
 
         val video2 = TimelineTrack(
             "video-2",
@@ -93,6 +96,8 @@ class TimelineExportAutoFixerTest {
             )
         )
         val visibleVideo1 = video1.copy(clips = listOf(lockedClip.copy(isLocked = false)))
-        assertNull(TimelineExportAutoFixer.compactVisibleVideoTrack(project(visibleVideo1, video2)))
+        assertNull(
+            TimelineExportAutoFixer.compactVisibleVideoTrackCommands(project(visibleVideo1, video2))
+        )
     }
 }

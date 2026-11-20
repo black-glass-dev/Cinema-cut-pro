@@ -18,6 +18,7 @@ import com.example.timeline.media.FrameRate
 import com.example.timeline.media.MediaAsset
 import com.example.timeline.media.MediaAssetType
 import com.example.timeline.media.MediaMetadata
+import com.example.timeline.media.MotionCamRawFormat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -190,6 +191,23 @@ class ExportSettingsDefaultsTest {
         val project = project(clip("clip", source.assetId), assets = listOf(source))
 
         val result = ExportSettingsDefaults.adaptToSimpleSource(settings(), project)
+
+        assertFalse(result.includeAudio)
+    }
+
+    @Test
+    fun mcrawSourcesDefaultToVideoOnlyUntilTheirPcmAudioCanBeEncoded() {
+        val rawSource = asset("raw", FrameRate(30, 1), audioSampleRate = 48_000).copy(
+            displayName = "raw.mcraw",
+            originalUriString = "file:///tmp/raw.mcraw",
+            mimeType = MotionCamRawFormat.MIME_TYPE
+        )
+        val project = project(clip("clip", rawSource.assetId), assets = listOf(rawSource))
+
+        val result = ExportSettingsDefaults.adaptToSimpleSource(
+            settings().copy(includeAudio = true),
+            project
+        )
 
         assertFalse(result.includeAudio)
     }

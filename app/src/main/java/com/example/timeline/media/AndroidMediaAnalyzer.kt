@@ -5,6 +5,10 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import com.example.timeline.core.Rational
+import com.example.timeline.core.TimelineFrameMath
+import java.math.BigDecimal
+import java.math.RoundingMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -25,7 +29,7 @@ class AndroidMediaAnalyzer(
         var durationUs = 0L
         var width = 0
         var height = 0
-        var frameRateVal = 30f
+        var primaryFrameRate: FrameRate? = null
         var defaultMimeType = asset.mimeType
         var rotation = 0
 
@@ -39,7 +43,8 @@ class AndroidMediaAnalyzer(
 
             val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
             if (durationStr != null) {
-                durationUs = (durationStr.toLongOrNull() ?: 0L) * 1000L
+                val durationMs = durationStr.toLongOrNull() ?: 0L
+                durationUs = if (durationMs >= 0L) Math.multiplyExact(durationMs, 1_000L) else 0L
             }
             
             val rotationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
@@ -52,31 +57,40 @@ class AndroidMediaAnalyzer(
                 val trackMime = format.getString(MediaFormat.KEY_MIME) ?: ""
 
                 if (trackMime.startsWith("video/")) {
-                    if (firstVideoTrackIndex == null) firstVideoTrackIndex = i
+                    val isPrimaryTrack = firstVideoTrackIndex == null
+                    if (isPrimaryTrack) firstVideoTrackIndex = i
                     width = format.getIntegerSafely(MediaFormat.KEY_WIDTH, 0)
                     height = format.getIntegerSafely(MediaFormat.KEY_HEIGHT, 0)
 
-                    if (format.containsKey(MediaFormat.KEY_FRAME_RATE)) {
-                        frameRateVal = try {
-                            format.getFloat(MediaFormat.KEY_FRAME_RATE)
-                        } catch(e: Exception) {
-                            format.getIntegerSafely(MediaFormat.KEY_FRAME_RATE, 30).toFloat()
+                    val streamFrameRate = if (format.containsKey(MediaFormat.KEY_FRAME_RATE)) {
+                        val rateText = try {
+                            format.getFloat(MediaFormat.KEY_FRAME_RATE).toString()
+                        } catch (_: Exception) {
+                            format.getIntegerSafely(MediaFormat.KEY_FRAME_RATE, 0)
+                                .takeIf { it > 0 }
+                                ?.toString()
                         }
+                        frameRateFromDecimal(rateText)
+                    } else {
+                        null
                     }
+                    if (isPrimaryTrack) primaryFrameRate = streamFrameRate
 
                     val colorStandard = if (format.containsKey(MediaFormat.KEY_COLOR_STANDARD)) format.getInteger(MediaFormat.KEY_COLOR_STANDARD) else null
                     val colorTransfer = if (format.containsKey(MediaFormat.KEY_COLOR_TRANSFER)) format.getInteger(MediaFormat.KEY_COLOR_TRANSFER) else null
                     val isHdr = colorTransfer == MediaFormat.COLOR_TRANSFER_HLG || colorTransfer == MediaFormat.COLOR_TRANSFER_ST2084
                     val codecProfile = if (format.containsKey(MediaFormat.KEY_PROFILE)) format.getIntegerSafely(MediaFormat.KEY_PROFILE, 0) else null
                     val codecLevel = if (format.containsKey(MediaFormat.KEY_LEVEL)) format.getIntegerSafely(MediaFormat.KEY_LEVEL, 0) else null
-                    val decoderSupport = capabilityDetector.decoderSupportForFormat(
-                        trackMime,
-                        width,
-                        height,
-                        frameRateVal,
-                        codecProfile,
-                        codecLevel
-                    )
+                    val decoderSupport = streamFrameRate?.let { rate ->
+                        capabilityDetector.decoderSupportForFormat(
+                            trackMime,
+                            width,
+                            height,
+                            rate.fpsAsFloat,
+                            codecProfile,
+                            codecLevel
+                        )
+                    } ?: VideoDecoderSupport(unknown = true)
 
                     videoStreams.add(
                         VideoStreamInfo(
@@ -86,7 +100,7 @@ class AndroidMediaAnalyzer(
                             codecLevel = codecLevel,
                             width = width,
                             height = height,
-                            frameRate = FrameRate((frameRateVal * 1000).toInt(), 1000),
+                            frameRate = streamFrameRate,
                             bitDepth = null,
                             chromaSubsampling = null,
                             colorStandard = colorStandard,
@@ -134,29 +148,39 @@ class AndroidMediaAnalyzer(
             val hasVideo = videoStreams.isNotEmpty() || width > 0
             val hasAudio = audioStreams.isNotEmpty()
 
-            if (hasVideo && videoStreams.isEmpty()) {
-                val fpsStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)
-                if (fpsStr != null) {
-                    frameRateVal = fpsStr.toFloatOrNull() ?: frameRateVal
-                }
+            if (hasVideo && primaryFrameRate == null) {
+                primaryFrameRate = frameRateFromDecimal(
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)
+                )
             }
-            
+
             // Probe presentation timestamps from the selected video track. This does not decode
             // frames, and the bounded sample avoids making media import wait on a full scan.
-            val cadence = firstVideoTrackIndex?.let { trackIndex ->
+            val cadenceAnalysis = firstVideoTrackIndex?.let { trackIndex ->
                 scanVideoPresentationTimes(extractor, trackIndex)
-            } ?: FrameRateCadence.UNKNOWN
+            } ?: FrameRateCadenceAnalysis(FrameRateCadence.UNKNOWN, null)
+            val cadence = cadenceAnalysis.cadence
             val isVariableFrameRate = cadence == FrameRateCadence.VARIABLE
             val variableFrameRateDetectionComplete = cadence != FrameRateCadence.UNKNOWN
+            val estimatedFrameRate = primaryFrameRate ?: cadenceAnalysis.medianIntervalUs?.let(
+                MediaTimeMapping::frameRateFromIntervalMicroseconds
+            )
+            val videoStreamsWithRate = videoStreams.mapIndexed { index, stream ->
+                if (index == 0 && stream.frameRate == null && estimatedFrameRate != null) {
+                    stream.copy(frameRate = estimatedFrameRate)
+                } else {
+                    stream
+                }
+            }
 
             val analysisResult = MediaAnalysisResult(
                 durationUs = durationUs,
                 width = width,
                 height = height,
                 rotation = rotation,
-                frameRate = frameRateVal,
+                frameRate = estimatedFrameRate?.fpsAsFloat,
                 defaultMimeType = defaultMimeType,
-                videoStreams = videoStreams,
+                videoStreams = videoStreamsWithRate,
                 audioStreams = audioStreams,
                 hasVideo = hasVideo,
                 hasAudio = hasAudio,
@@ -166,8 +190,16 @@ class AndroidMediaAnalyzer(
 
             val mediaStatusResult = decisionEngine.decideImportStatus(analysisResult)
 
-            val finalFrameRate = FrameRate((frameRateVal * 1000).toInt(), 1000)
-            val durationFrames = if (hasVideo || hasAudio) ((durationUs / 1000000.0) * frameRateVal).toLong() else 1L
+            val durationFrames = if (hasVideo || hasAudio) {
+                estimatedFrameRate?.let { rate ->
+                    TimelineFrameMath.framesFromMicroseconds(
+                        durationUs,
+                        Rational(rate.numerator, rate.denominator)
+                    )
+                } ?: 0L
+            } else {
+                1L
+            }
 
             val metadata = asset.metadata.copy(
                 durationUs = durationUs,
@@ -176,12 +208,12 @@ class AndroidMediaAnalyzer(
                 width = width,
                 height = height,
                 rotationDegrees = rotation,
-                videoStreams = videoStreams,
+                videoStreams = videoStreamsWithRate,
                 audioStreams = audioStreams,
                 hasVideo = hasVideo,
                 hasAudio = hasAudio,
                 isVariableFrameRate = isVariableFrameRate,
-                estimatedFrameRate = finalFrameRate,
+                estimatedFrameRate = estimatedFrameRate,
                 variableFrameRateDetectionComplete = variableFrameRateDetectionComplete
             )
 
@@ -214,10 +246,56 @@ class AndroidMediaAnalyzer(
         }
     }
 
+    private fun frameRateFromDecimal(value: String?): FrameRate? {
+        val text = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val decimal = try {
+            BigDecimal(text).stripTrailingZeros()
+        } catch (_: NumberFormatException) {
+            return null
+        }
+        if (decimal.signum() <= 0) return null
+        val scale = decimal.scale().coerceAtLeast(0)
+        if (scale > 6) return null
+        val numerator = try {
+            decimal.movePointRight(scale).setScale(0, RoundingMode.UNNECESSARY).longValueExact()
+        } catch (_: ArithmeticException) {
+            return null
+        }
+        val denominator = when (scale) {
+            0 -> 1L
+            1 -> 10L
+            2 -> 100L
+            3 -> 1_000L
+            4 -> 10_000L
+            5 -> 100_000L
+            else -> 1_000_000L
+        }
+        if (numerator <= 0L || numerator > Int.MAX_VALUE || denominator > Int.MAX_VALUE) return null
+        val divisor = greatestCommonDivisor(numerator, denominator)
+        val reducedNumerator = numerator / divisor
+        val reducedDenominator = denominator / divisor
+        val rate = FrameRate(reducedNumerator.toInt(), reducedDenominator.toInt())
+        return rate.takeIf {
+            it.numerator.toLong() <= it.denominator.toLong() * 240L &&
+                it.denominator.toLong() <= it.numerator.toLong()
+        }
+    }
+
+    private fun greatestCommonDivisor(first: Long, second: Long): Long {
+        var a = first
+        var b = second
+        while (b != 0L) {
+            val remainder = a % b
+            a = b
+            b = remainder
+        }
+        return a
+    }
+
     private fun scanVideoPresentationTimes(
         extractor: MediaExtractor,
         videoTrackIndex: Int
-    ): FrameRateCadence {
+    ): FrameRateCadenceAnalysis {
         val presentationTimesUs = ArrayList<Long>()
         var selectedTrack = false
         try {
@@ -230,7 +308,7 @@ class AndroidMediaAnalyzer(
                 if (sampleTrackIndex == videoTrackIndex) {
                     if (presentationTimesUs.size >= MAX_VFR_SAMPLE_COUNT) {
                         // A bounded scan that hits the limit is inconclusive, not proof of CFR.
-                        return FrameRateCadence.UNKNOWN
+                        return FrameRateCadenceAnalysis(FrameRateCadence.UNKNOWN, null)
                     }
                     presentationTimesUs += sampleTimeUs
                 }
@@ -240,11 +318,11 @@ class AndroidMediaAnalyzer(
             if (com.example.BuildConfig.DEBUG) {
                 android.util.Log.w("AndroidMediaAnalyzer", "Could not scan video timestamps for VFR detection", error)
             }
-            return FrameRateCadence.UNKNOWN
+            return FrameRateCadenceAnalysis(FrameRateCadence.UNKNOWN, null)
         } finally {
             if (selectedTrack) runCatching { extractor.unselectTrack(videoTrackIndex) }
         }
-        return VariableFrameRateDetector.classify(presentationTimesUs)
+        return VariableFrameRateDetector.analyze(presentationTimesUs)
     }
 
     private fun MediaFormat.getIntegerSafely(key: String, default: Int): Int {

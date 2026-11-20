@@ -11,6 +11,7 @@ import com.example.timeline.export.model.ExportQualityPreset
 import com.example.timeline.export.model.ExportSettings
 import com.example.timeline.media.FrameRate
 import com.example.timeline.media.MediaAsset
+import com.example.timeline.media.MotionCamRawFormat
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -42,7 +43,7 @@ internal object ExportSettingsDefaults {
         val commonAudio = commonEmbeddedAudioFormat(activeSources)
         val canIncludeAudio = activeVideoTrack?.isMuted == false && activeVideoClips.isNotEmpty() &&
             activeSources.size == activeVideoClips.size && activeSources.all { it.asset.metadata.hasAudio } &&
-            commonAudio != null
+            activeSources.none { MotionCamRawFormat.isMcrawAsset(it.asset) } && commonAudio != null
         val (outputWidth, outputHeight) = if (matchProjectOrientation) {
             resolutionMatchingProject(
                 settings.resolutionWidth,

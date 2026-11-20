@@ -35,6 +35,7 @@ fun LutPanel(
     intensity: Float,
     onLutSelected: (String?) -> Unit,
     onIntensityChanged: (Float) -> Unit,
+    onIntensityChangeFinished: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -44,6 +45,8 @@ fun LutPanel(
 
     fun refreshLuts() {
         coroutineScope.launch {
+            // Re-scan persisted files first so LUTs imported in earlier sessions reappear.
+            LutRepository.initialize(context)
             luts = LutRepository.getLuts()
             isLoading = false
         }
@@ -94,6 +97,7 @@ fun LutPanel(
                 Slider(
                     value = intensity,
                     onValueChange = onIntensityChanged,
+                    onValueChangeFinished = onIntensityChangeFinished,
                     valueRange = 0f..1f,
                     modifier = Modifier.weight(0.7f)
                 )
@@ -129,9 +133,12 @@ fun LutPanel(
                         isSelected = selectedLutId == entry.id,
                         onClick = { onLutSelected(entry.id) },
                         onDelete = {
-                            // Deletion isn't fully implemented in LutRepository yet, just a quick map wipe for now
-                            // LutRepository.deleteLut(entry.id)
-                            // refreshLuts()
+                            coroutineScope.launch {
+                                val deleted = LutRepository.deleteLut(entry.id)
+                                if (!deleted) return@launch
+                                refreshLuts()
+                                if (selectedLutId == entry.id) onLutSelected(null)
+                            }
                         }
                     )
                 }

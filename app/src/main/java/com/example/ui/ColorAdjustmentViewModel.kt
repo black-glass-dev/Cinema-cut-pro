@@ -3,24 +3,21 @@ package com.example.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.model.adjustments.AdjustmentStack
-import com.example.model.adjustments.commands.SetAdjustmentParameterCommand
-import com.example.timeline.core.TimelineProject
+import com.example.timeline.core.SnapshotCommand
 import com.example.timeline.ui.TimelineViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import com.example.model.colorgrade.GradeAutosaveHook
-import com.example.model.colorgrade.commands.*
 import com.example.model.colorgrade.ColorGradeStack
-import com.example.model.colorgrade.engine.PrimaryWheelAdjustmentMapper
+import com.example.model.colorgrade.engine.ColorGradeAdjustmentMapper
 import com.example.model.colorgrade.GradeKeyframeManager
 
 class ColorAdjustmentViewModel(
     private val timelineViewModel: TimelineViewModel
 ) : ViewModel() {
 
-    private var dragStartGradeStack: ColorGradeStack? = null
-    
+    private var dragStartProject: com.example.timeline.core.TimelineProject? = null
+    private var dragStartClipId: String? = null
+
     // UI state flows from timelineViewModel
     val dragInProgress = MutableStateFlow(false)
     val isEyedropperActive = MutableStateFlow(false)
@@ -57,36 +54,35 @@ class ColorAdjustmentViewModel(
     }
 
     fun beginAdjustmentDrag() {
-        if (dragStartGradeStack == null) {
-            val tcId = timelineViewModel.uiState.value.selectedClipId
-            dragStartGradeStack = timelineViewModel.uiState.value.project.tracks.flatMap { it.clips }.find { it.id == tcId }?.colorGrade
-            dragInProgress.value = true
-        }
+        if (dragInProgress.value) return
+        val state = timelineViewModel.uiState.value
+        dragStartProject = state.project
+        dragStartClipId = state.selectedClipId
+        dragInProgress.value = true
     }
 
-    fun endAdjustmentDrag(actionType: String = "ColorGradeCommand") {
-        val oldGrade = dragStartGradeStack
-        val targetClipId = timelineViewModel.uiState.value.selectedClipId
-        val newGrade = timelineViewModel.uiState.value.project.tracks.flatMap { t -> t.clips }.find { c -> c.id == targetClipId }?.colorGrade
-        
-        if (oldGrade != null && targetClipId != null && newGrade != null && oldGrade != newGrade) {
-            val cmd = when (actionType) {
-                "SetColorWheelCommand" -> SetColorWheelCommand(targetClipId, oldGrade, newGrade)
-                "SetCurveCommand" -> SetCurveCommand(targetClipId, oldGrade, newGrade)
-                "AddCurvePointCommand" -> AddCurvePointCommand(targetClipId, oldGrade, newGrade)
-                "RemoveCurvePointCommand" -> RemoveCurvePointCommand(targetClipId, oldGrade, newGrade)
-                "ApplyLutCommand" -> ApplyLutCommand(targetClipId, oldGrade, newGrade)
-                "RemoveLutCommand" -> RemoveLutCommand(targetClipId, oldGrade, newGrade)
-                "SetHslQualifierCommand" -> SetHslQualifierCommand(targetClipId, oldGrade, newGrade)
-                "ApplyColorMatchCommand" -> ApplyColorMatchCommand(targetClipId, oldGrade, newGrade)
-                "SetSkinProtectionCommand" -> SetSkinProtectionCommand(targetClipId, oldGrade, newGrade)
-                else -> ColorGradeCommand(targetClipId, oldGrade, newGrade)
-            }
-            timelineViewModel.pushHistoryCommand(cmd)
+    fun endAdjustmentDrag(actionType: String = "Color Grade Change") {
+        val projectBefore = dragStartProject
+        val stateAfter = timelineViewModel.uiState.value
+        val targetClipId = dragStartClipId ?: stateAfter.selectedClipId
+
+        // A color gesture can update more than colorGrade: the shared preview params, a selected
+        // node, or both. Snapshot the complete metadata edit so undo/redo restores the rendered
+        // state instead of reverting only the UI model while leaving mirrored shader values behind.
+        if (projectBefore != null && projectBefore != stateAfter.project) {
+            timelineViewModel.pushHistoryCommand(
+                SnapshotCommand(
+                    commandName = actionType,
+                    projectBefore = projectBefore,
+                    projectAfter = stateAfter.project,
+                    affectedClipIds = targetClipId?.let(::listOf).orEmpty()
+                )
+            )
         }
-        dragStartGradeStack = null
+        dragStartProject = null
+        dragStartClipId = null
         dragInProgress.value = false
-        
+
         GradeAutosaveHook.onGestureEnded(viewModelScope) {
             timelineViewModel.forceSaveProject()
         }
@@ -109,34 +105,28 @@ class ColorAdjustmentViewModel(
 
     fun pasteAdjustmentsToSelectedClip() {
         val stack = clipboardAdjustments ?: return
-        val currentStack = getSelectedClipAdjustmentStack() ?: return
-        
-        beginAdjustmentDrag()
-        
-        val newStack = currentStack.copy(
-            params = stack.params.copy()
-        )
-        // Also apply the colorGrade which maps to params
         val state = timelineViewModel.uiState.value
         val clipId = state.selectedClipId ?: return
         val track = state.project.tracks.firstOrNull { t -> t.clips.any { c -> c.id == clipId } } ?: return
-        val sourceClip = state.project.tracks.flatMap { it.clips }.find { it.adjustments.stackId == stack.stackId }
-        val newGrade = sourceClip?.colorGrade?.copy() ?: com.example.model.colorgrade.ColorGradeHelper.defaultColorGrade(clipId)
-        
         val clipIndex = track.clips.indexOfFirst { it.id == clipId }
-        if (clipIndex != -1) {
-            val oldClip = track.clips[clipIndex]
-            val newClip = oldClip.copy(adjustments = newStack, colorGrade = newGrade)
-            val newTracks = state.project.tracks.map {
-                if (it.id == track.id) {
-                    val clipsMutable = it.clips.toMutableList()
-                    clipsMutable[clipIndex] = newClip
-                    it.copy(clips = clipsMutable)
-                } else it
-            }
-            timelineViewModel.updateStateWithoutHistory(state.project.copy(tracks = newTracks))
+        if (clipIndex < 0) return
+        val currentStack = track.clips[clipIndex].adjustments
+        val sourceClip = state.project.tracks.flatMap { it.clips }.find { it.adjustments.stackId == stack.stackId }
+        val newGrade = sourceClip?.colorGrade?.copy()
+            ?: com.example.model.colorgrade.ColorGradeHelper.defaultColorGrade(clipId)
+
+        beginAdjustmentDrag()
+        val newStack = currentStack.copy(params = stack.params.copy())
+        val oldClip = track.clips[clipIndex]
+        val newClip = oldClip.copy(adjustments = newStack, colorGrade = newGrade)
+        val newTracks = state.project.tracks.map {
+            if (it.id == track.id) {
+                val clipsMutable = it.clips.toMutableList()
+                clipsMutable[clipIndex] = newClip
+                it.copy(clips = clipsMutable)
+            } else it
         }
-        
+        timelineViewModel.updateStateWithoutHistory(state.project.copy(tracks = newTracks))
         endAdjustmentDrag("Paste Grade")
     }
 
@@ -225,55 +215,11 @@ class ColorAdjustmentViewModel(
         // Implementation stub
     }
 
-    fun evaluateCurrentFrameAdjustments(): com.example.model.adjustments.VideoAdjustmentParams {
-        val selectedClipId = timelineViewModel.uiState.value.selectedClipId ?: return com.example.model.adjustments.VideoAdjustmentParams.default()
-        val clip = timelineViewModel.uiState.value.project.tracks.flatMap { it.clips }.find { it.id == selectedClipId } ?: return com.example.model.adjustments.VideoAdjustmentParams.default()
-        
-        val evaluatedGrade = clip.colorGrade.evaluateGradeAtFrame(timelineViewModel.playheadFrame.value)
-        // Ensure the preview uses the evaluated grade
-        // We will return the mapped params
-        val newGrade = evaluatedGrade
-        val wheelParams = PrimaryWheelAdjustmentMapper.apply(
-            com.example.model.adjustments.VideoAdjustmentParams.default(),
-            newGrade.primaryCorrections
+    fun evaluateCurrentFrameAdjustments(): com.example.model.adjustments.VideoAdjustmentParams =
+        com.example.timeline.engine.GradeEvaluationEngine.evaluateFrame(
+            timelineViewModel.uiState.value.project,
+            timelineViewModel.playheadFrame.value
         )
-        return wheelParams.copy(
-                shadowColorBalance = com.example.model.adjustments.Vector3(newGrade.primaryCorrections.shadows.r, newGrade.primaryCorrections.shadows.g, newGrade.primaryCorrections.shadows.b),
-                midtoneColorBalance = com.example.model.adjustments.Vector3(newGrade.primaryCorrections.midtones.r, newGrade.primaryCorrections.midtones.g, newGrade.primaryCorrections.midtones.b),
-                highlightColorBalance = com.example.model.adjustments.Vector3(newGrade.primaryCorrections.highlights.r, newGrade.primaryCorrections.highlights.g, newGrade.primaryCorrections.highlights.b),
-                hslHue = floatArrayOf(
-                    newGrade.selectiveColor.red.hueShift, newGrade.selectiveColor.orange.hueShift, newGrade.selectiveColor.yellow.hueShift, newGrade.selectiveColor.green.hueShift,
-                    newGrade.selectiveColor.cyan.hueShift, newGrade.selectiveColor.blue.hueShift, newGrade.selectiveColor.purple.hueShift, newGrade.selectiveColor.magenta.hueShift
-                ),
-                hslSat = floatArrayOf(
-                    newGrade.selectiveColor.red.saturation, newGrade.selectiveColor.orange.saturation, newGrade.selectiveColor.yellow.saturation, newGrade.selectiveColor.green.saturation,
-                    newGrade.selectiveColor.cyan.saturation, newGrade.selectiveColor.blue.saturation, newGrade.selectiveColor.purple.saturation, newGrade.selectiveColor.magenta.saturation
-                ),
-                hslLum = floatArrayOf(
-                    newGrade.selectiveColor.red.luminance, newGrade.selectiveColor.orange.luminance, newGrade.selectiveColor.yellow.luminance, newGrade.selectiveColor.green.luminance,
-                    newGrade.selectiveColor.cyan.luminance, newGrade.selectiveColor.blue.luminance, newGrade.selectiveColor.purple.luminance, newGrade.selectiveColor.magenta.luminance
-                ),
-                qualEnabled = newGrade.hslAdjustments.enabled,
-                qualHueCenter = newGrade.hslAdjustments.hueCenter,
-                qualHueWidth = newGrade.hslAdjustments.hueWidth,
-                qualHueFeather = newGrade.hslAdjustments.hueFeather,
-                qualSatMin = newGrade.hslAdjustments.saturationMin,
-                qualSatMax = newGrade.hslAdjustments.saturationMax,
-                qualSatFeather = newGrade.hslAdjustments.saturationFeather,
-                qualLumMin = newGrade.hslAdjustments.luminanceMin,
-                qualLumMax = newGrade.hslAdjustments.luminanceMax,
-                qualLumFeather = newGrade.hslAdjustments.luminanceFeather,
-                qualInvert = newGrade.hslAdjustments.invertMask,
-                qualShowMatte = newGrade.hslAdjustments.showMatte,
-                qualHueShift = newGrade.hslAdjustments.hueShift,
-                qualSat = newGrade.hslAdjustments.saturation,
-                qualLum = newGrade.hslAdjustments.luminance,
-                qualContrast = newGrade.hslAdjustments.contrast,
-                qualTemp = newGrade.hslAdjustments.temperature,
-                qualTint = newGrade.hslAdjustments.tint,
-                curves = if (newGrade.enabled) newGrade.curves else com.example.model.colorgrade.CurveParams()
-        )
-    }
 
     fun updateAdjustmentParamLive(parameterId: String, value: Float) {
         val state = timelineViewModel.uiState.value
@@ -302,11 +248,11 @@ class ColorAdjustmentViewModel(
     fun setLutId(lutId: String?) {
         val state = timelineViewModel.uiState.value
         val clipId = state.selectedClipId ?: return
-        beginAdjustmentDrag()
-        
         val track = state.project.tracks.firstOrNull { t -> t.clips.any { c -> c.id == clipId } } ?: return
         val clipIndex = track.clips.indexOfFirst { it.id == clipId }
-        
+        if (clipIndex < 0) return
+        beginAdjustmentDrag()
+
         if (clipIndex != -1) {
             val oldClip = track.clips[clipIndex]
             val newParams = oldClip.adjustments.params.copy(lutId = lutId)
@@ -339,63 +285,26 @@ class ColorAdjustmentViewModel(
         if (clipIndex != -1) {
             val oldClip = track.clips[clipIndex]
             
-            // Map ColorGradeStack -> VideoAdjustmentParams to affect GPU preview/export immediately
-            val currentParams = oldClip.adjustments.params
-            val wheelParams = PrimaryWheelAdjustmentMapper.applyChanges(
-                base = currentParams,
-                previousGrade = oldClip.colorGrade.primaryCorrections,
-                newGrade = newGrade.primaryCorrections
-            )
-            val newParams = wheelParams.copy(
-                shadowColorBalance = com.example.model.adjustments.Vector3(newGrade.primaryCorrections.shadows.r, newGrade.primaryCorrections.shadows.g, newGrade.primaryCorrections.shadows.b),
-                midtoneColorBalance = com.example.model.adjustments.Vector3(newGrade.primaryCorrections.midtones.r, newGrade.primaryCorrections.midtones.g, newGrade.primaryCorrections.midtones.b),
-                highlightColorBalance = com.example.model.adjustments.Vector3(newGrade.primaryCorrections.highlights.r, newGrade.primaryCorrections.highlights.g, newGrade.primaryCorrections.highlights.b),
-                hslHue = floatArrayOf(
-                    newGrade.selectiveColor.red.hueShift, newGrade.selectiveColor.orange.hueShift, newGrade.selectiveColor.yellow.hueShift, newGrade.selectiveColor.green.hueShift,
-                    newGrade.selectiveColor.cyan.hueShift, newGrade.selectiveColor.blue.hueShift, newGrade.selectiveColor.purple.hueShift, newGrade.selectiveColor.magenta.hueShift
-                ),
-                hslSat = floatArrayOf(
-                    newGrade.selectiveColor.red.saturation, newGrade.selectiveColor.orange.saturation, newGrade.selectiveColor.yellow.saturation, newGrade.selectiveColor.green.saturation,
-                    newGrade.selectiveColor.cyan.saturation, newGrade.selectiveColor.blue.saturation, newGrade.selectiveColor.purple.saturation, newGrade.selectiveColor.magenta.saturation
-                ),
-                hslLum = floatArrayOf(
-                    newGrade.selectiveColor.red.luminance, newGrade.selectiveColor.orange.luminance, newGrade.selectiveColor.yellow.luminance, newGrade.selectiveColor.green.luminance,
-                    newGrade.selectiveColor.cyan.luminance, newGrade.selectiveColor.blue.luminance, newGrade.selectiveColor.purple.luminance, newGrade.selectiveColor.magenta.luminance
-                ),
-                qualEnabled = newGrade.hslAdjustments.enabled,
-                qualHueCenter = newGrade.hslAdjustments.hueCenter,
-                qualHueWidth = newGrade.hslAdjustments.hueWidth,
-                qualHueFeather = newGrade.hslAdjustments.hueFeather,
-                qualSatMin = newGrade.hslAdjustments.saturationMin,
-                qualSatMax = newGrade.hslAdjustments.saturationMax,
-                qualSatFeather = newGrade.hslAdjustments.saturationFeather,
-                qualLumMin = newGrade.hslAdjustments.luminanceMin,
-                qualLumMax = newGrade.hslAdjustments.luminanceMax,
-                qualLumFeather = newGrade.hslAdjustments.luminanceFeather,
-                qualInvert = newGrade.hslAdjustments.invertMask,
-                qualShowMatte = newGrade.hslAdjustments.showMatte,
-                qualHueShift = newGrade.hslAdjustments.hueShift,
-                qualSat = newGrade.hslAdjustments.saturation,
-                qualLum = newGrade.hslAdjustments.luminance,
-                qualContrast = newGrade.hslAdjustments.contrast,
-                qualTemp = newGrade.hslAdjustments.temperature,
-                qualTint = newGrade.hslAdjustments.tint,
-                curves = if (newGrade.enabled) newGrade.curves else com.example.model.colorgrade.CurveParams()
-            )
-            val newAdjustments = oldClip.adjustments.copy(params = newParams)
-            
-            val newColorLayers = colorLayerId?.let { targetLayerId ->
-                oldClip.colorLayers.copy(
+            // Node edits remain in the node stack. The clip-level grade and its mirrored shader
+            // params are only updated when the regular (non-node) color panel is active.
+            val newClip = if (colorLayerId == null) {
+                val newParams = ColorGradeAdjustmentMapper.applyClipGradeChanges(
+                    base = oldClip.adjustments.params,
+                    previousGrade = oldClip.colorGrade,
+                    newGrade = newGrade
+                )
+                oldClip.copy(
+                    colorGrade = newGrade,
+                    adjustments = oldClip.adjustments.copy(params = newParams)
+                )
+            } else {
+                val newColorLayers = oldClip.colorLayers.copy(
                     layers = oldClip.colorLayers.layers.map { layer ->
-                        if (layer.id == targetLayerId) layer.copy(grade = newGrade) else layer
+                        if (layer.id == colorLayerId) layer.copy(grade = newGrade) else layer
                     }
                 )
-            } ?: oldClip.colorLayers
-            val newClip = oldClip.copy(
-                colorGrade = newGrade,
-                adjustments = newAdjustments,
-                colorLayers = newColorLayers
-            )
+                oldClip.copy(colorLayers = newColorLayers)
+            }
             val newTracks = state.project.tracks.map {
                 if (it.id == track.id) {
                     val clipsMutable = it.clips.toMutableList()
@@ -420,18 +329,15 @@ class ColorAdjustmentViewModel(
     }
 
     fun resetAdjustmentParam(parameterId: String) {
-        val currentState = timelineViewModel.uiState.value.project
-        val targetClipId = timelineViewModel.uiState.value.selectedClipId ?: return
-        
-        beginAdjustmentDrag()
-        
         val state = timelineViewModel.uiState.value
+        val targetClipId = state.selectedClipId ?: return
         val track = state.project.tracks.firstOrNull { t -> t.clips.any { c -> c.id == targetClipId } } ?: return
         val clipIndex = track.clips.indexOfFirst { it.id == targetClipId }
-        
+        if (clipIndex < 0) return
+        beginAdjustmentDrag()
+
         if (clipIndex != -1) {
             val oldClip = track.clips[clipIndex]
-            val defaultParams = com.example.model.adjustments.VideoAdjustmentParams.default()
             
             // Helper to pull default value correctly
             val defaultValue = when(parameterId) {
@@ -467,21 +373,34 @@ class ColorAdjustmentViewModel(
     }
 
     fun resetAllAdjustments() {
-        val currentState = timelineViewModel.uiState.value.project
-        val targetClipId = timelineViewModel.uiState.value.selectedClipId ?: return
-        
-        beginAdjustmentDrag()
-        val defaultStack = AdjustmentStack("default", com.example.model.adjustments.TargetType.CLIP, targetClipId)
-        
         val state = timelineViewModel.uiState.value
+        val targetClipId = state.selectedClipId ?: return
         val track = state.project.tracks.firstOrNull { t -> t.clips.any { c -> c.id == targetClipId } } ?: return
         val clipIndex = track.clips.indexOfFirst { it.id == targetClipId }
-        
+        if (clipIndex < 0) return
+        beginAdjustmentDrag()
+
         if (clipIndex != -1) {
             val oldClip = track.clips[clipIndex]
+            val defaultStack = oldClip.adjustments.resetAll().copy(
+                enabled = true,
+                opacity = 1f,
+                modifiedAt = System.currentTimeMillis()
+            )
+            val resetColorLayers = oldClip.colorLayers.copy(
+                enabled = true,
+                layers = oldClip.colorLayers.layers.map { layer ->
+                    layer.copy(
+                        enabled = true,
+                        opacity = 1f,
+                        grade = layer.grade.resetAllGrade()
+                    )
+                }
+            )
             val newClip = oldClip.copy(
                 adjustments = defaultStack,
-                colorGrade = oldClip.colorGrade.resetAllGrade()
+                colorGrade = oldClip.colorGrade.resetAllGrade(),
+                colorLayers = resetColorLayers
             )
             val newTracks = state.project.tracks.map {
                 if (it.id == track.id) {

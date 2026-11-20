@@ -50,15 +50,9 @@ fun TimelineScreen(viewModel: TimelineViewModel, editorViewModel: com.example.ui
             onRedo = { viewModel.redo() },
             onSplit = { viewModel.splitAtPlayhead() },
             onDelete = { viewModel.deleteSelectedClip(ripple = false) },
-            onRippleDelete = { viewModel.deleteSelectedClip(ripple = true) },
-            onAddMarker = { viewModel.addMarkerAtPlayhead() },
-            onAddTrack = { viewModel.addTrack() },
-            onCompound = { viewModel.createCompoundClip() },
             onZoomIn = { viewModel.zoomIn() },
             onZoomOut = { viewModel.zoomOut() },
-            hasSelection = uiState.selectedClipId != null,
-            isFollowing = FollowPlayheadController.isFollowing.collectAsState().value,
-            onToggleFollow = { FollowPlayheadController.toggle() }
+            hasSelection = uiState.selectedClipId != null
         )
 
         HorizontalDivider()
@@ -76,12 +70,11 @@ fun TimelineScreen(viewModel: TimelineViewModel, editorViewModel: com.example.ui
                     viewModel.setPlayheadFrame(it)
                     editorViewModel.updatePlayheadFrame(it) 
                 },
-                onClipMoved = { clipId, frame -> viewModel.moveClip(clipId, frame) },
-                onTrimStart = { clipId, frame -> viewModel.trimClipStart(clipId, frame) },
-                onTrimEnd = { clipId, frame -> viewModel.trimClipEnd(clipId, frame) },
+                onNativeEditCommit = { commands, label -> viewModel.commitTimelineEdit(commands, label) },
                 onZoomChange = { viewModel.setZoom(it) },
                 onSplit = { viewModel.splitAtPlayhead() },
                 onDelete = { viewModel.deleteSelectedClip(ripple = false) },
+                onSetGroupLocked = { clipId, locked -> viewModel.setGroupLocked(clipId, locked) },
                 onRenameTrack = { id, name -> viewModel.renameTrack(id, name) },
                 onDeleteTrack = { id -> viewModel.deleteTrack(id) },
                 onMoveTrack = { id, index -> viewModel.moveTrack(id, index) }

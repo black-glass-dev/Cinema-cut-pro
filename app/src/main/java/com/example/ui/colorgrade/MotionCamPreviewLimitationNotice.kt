@@ -57,7 +57,7 @@ internal fun MotionCamPreviewLimitationNotice(modifier: Modifier = Modifier) {
                         "Exposure, temperature/tint, primary Lift/Gamma/Gain/Offset, three-zone color balance, brightness, " +
                         "contrast, and saturation are previewed. Curves, HSL, LUTs, multi-layer grades, and other advanced " +
                         "effects are not rendered in this RAW preview; those settings remain saved in the project. " +
-                        "The current MP4 export backend does not export .mcraw sources."
+                        "The H.264/MP4 export can develop .mcraw to 8-bit SDR, but it is not a full ISP or 10-bit RAW export and embedded RAW audio is omitted."
                 )
             },
             confirmButton = {

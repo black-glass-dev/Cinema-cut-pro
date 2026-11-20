@@ -281,7 +281,9 @@ Java_com_example_timeline_media_NativeMcrawDecoder_nativeDecodeFrameToBitmap(
             throw motioncam::IOException("MCRAW decoder returned a truncated RAW frame");
         }
 
-        const int maximumEdge = std::clamp(requestedMaximumEdge, 64, 2048);
+        // Preview callers still request at most 2048 px. The export bridge may request up to 4K
+        // long edge for an 8-bit SDR intermediate, subject to the encoder and memory limits.
+        const int maximumEdge = std::clamp(requestedMaximumEdge, 64, 3840);
         cinema::mcraw::PreviewGrade grade;
         if (requestedGradeParams != nullptr) {
             if (env->GetArrayLength(requestedGradeParams) != 15) {

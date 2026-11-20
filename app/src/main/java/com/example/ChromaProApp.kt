@@ -1,89 +1,72 @@
 package com.example
 
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.automirrored.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.zIndex
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.*
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.ui.input.pointer.pointerInput
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.sample
+import com.example.timeline.engine.preview.TimelinePreviewController
+import com.example.timeline.ui.TimelineViewModel
+import com.example.ui.ColorAdjustmentViewModel
+import com.example.ui.ColorMatchViewModel
+import com.example.ui.EditorTopBar
+import com.example.ui.editor.EditorScreen
+import com.example.ui.editor.EditorViewModel
+import com.example.ui.scopes.ScopeViewModel
+import com.example.ui.export.ExportScreen
 
-@OptIn(
-    ExperimentalMaterial3Api::class,
-    kotlinx.coroutines.FlowPreview::class,
-    kotlinx.coroutines.ExperimentalCoroutinesApi::class
-)
 @Composable
-fun ChromaProApp(viewModel: MainViewModel = viewModel()) {
-    val activityContext = androidx.compose.ui.platform.LocalContext.current
+fun ChromaProApp() {
+    val activityContext = LocalContext.current
     val context = activityContext.applicationContext
-    val timelineViewModel: com.example.timeline.ui.TimelineViewModel = viewModel(
-        factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+    val timelineViewModel: TimelineViewModel = viewModel(
+        factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
-            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                return com.example.timeline.ui.TimelineViewModel(context) as T
-            }
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                TimelineViewModel(context) as T
         }
     )
     val timelineUiState by timelineViewModel.uiState.collectAsState()
     val isPlaying by timelineViewModel.isPlaying.collectAsState()
-    val colorAdjustmentViewModel: com.example.ui.ColorAdjustmentViewModel = viewModel(
-        factory = object : androidx.lifecycle.ViewModelProvider.Factory {
-            @Suppress("UNCHECKED_CAST")
-            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                return com.example.ui.ColorAdjustmentViewModel(timelineViewModel) as T
-            }
-        }
-    )
-    val colorMatchViewModel: com.example.ui.ColorMatchViewModel = viewModel(
-        factory = object : androidx.lifecycle.ViewModelProvider.Factory {
-            @Suppress("UNCHECKED_CAST")
-            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                return com.example.ui.ColorMatchViewModel(timelineViewModel, context) as T
-            }
-        }
-    )
-    val isSampling by colorAdjustmentViewModel.isEyedropperActive.collectAsState()
 
-    val scopeViewModel: com.example.ui.scopes.ScopeViewModel = viewModel()
-    val scopeData by scopeViewModel.scopeData.collectAsState()
-    val isAnalyzing by scopeViewModel.isAnalyzing.collectAsState()
-    val editorViewModel: com.example.ui.editor.EditorViewModel = viewModel()
-    
-    val timelinePreviewController = remember { com.example.timeline.engine.preview.TimelinePreviewController(context) }
-    val previewActiveAsset by timelinePreviewController.activeAsset.collectAsState()
-    
-    androidx.compose.runtime.DisposableEffect(timelinePreviewController) {
-        timelinePreviewController.onPlayheadAdvanced = { newFrame ->
-            // Keep the preview/timeline cursor frame-accurate, while sampling legacy inspector
-            // panels so they do not trigger a full panel recomposition for every decoded frame.
-            editorViewModel.updatePlayheadFrame(newFrame)
-            timelineViewModel.setPlaybackPlayheadFrame(newFrame)
+    val colorAdjustmentViewModel: ColorAdjustmentViewModel = viewModel(
+        factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                ColorAdjustmentViewModel(timelineViewModel) as T
+        }
+    )
+    val colorMatchViewModel: ColorMatchViewModel = viewModel(
+        factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                ColorMatchViewModel(timelineViewModel, context) as T
+        }
+    )
+    val scopeViewModel: ScopeViewModel = viewModel()
+    val editorViewModel: EditorViewModel = viewModel()
+    val timelinePreviewController = remember(context) { TimelinePreviewController(context) }
+    var showExportDialog by remember { mutableStateOf(false) }
+
+    DisposableEffect(timelinePreviewController, editorViewModel, timelineViewModel) {
+        timelinePreviewController.onPlayheadAdvanced = { frame ->
+            editorViewModel.updatePlayheadFrame(frame)
+            timelineViewModel.setPlaybackPlayheadFrame(frame)
         }
         onDispose {
             timelinePreviewController.onPlayheadAdvanced = null
@@ -92,133 +75,34 @@ fun ChromaProApp(viewModel: MainViewModel = viewModel()) {
     }
 
     LaunchedEffect(isPlaying, editorViewModel, timelineViewModel) {
-        if (!isPlaying) {
-            // Reconcile the exact paused frame once, including while the advanced timeline is open.
-            timelineViewModel.setPlayheadFrame(editorViewModel.playheadFrame.value)
-        }
+        if (!isPlaying) timelineViewModel.setPlayheadFrame(editorViewModel.playheadFrame.value)
     }
 
-
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, timelinePreviewController, timelineViewModel) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE) {
                 timelinePreviewController.pause()
                 timelineViewModel.pausePlay()
             }
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                if (com.example.timeline.core.ActiveProjectManager.isDirty) {
-                    com.example.timeline.core.ActiveProjectManager.activeProject?.let { 
-                        timelineViewModel.updateStateWithoutHistory(it) 
-                    }
-                    editorViewModel.updatePlayheadFrame(com.example.timeline.core.ActiveProjectManager.playheadFrame)
-                    timelineViewModel.setPlayheadFrame(com.example.timeline.core.ActiveProjectManager.playheadFrame)
-                    timelineViewModel.selectClip(com.example.timeline.core.ActiveProjectManager.selectedClipId)
-                    com.example.timeline.core.ActiveProjectManager.isDirty = false
-                }
-            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    var showScopes by remember { mutableStateOf(false) }
-    var showAdvancedTimeline by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
-    DisposableEffect(showAdvancedTimeline, activityContext) {
-        val originalOrientation = if (showAdvancedTimeline) {
-            com.example.ui.OrientationController.requestLandscape(activityContext)
-        } else null
-        onDispose {
-            if (showAdvancedTimeline) {
-                com.example.ui.OrientationController.restoreOrientation(activityContext, originalOrientation)
-            }
-        }
-    }
-    var smokeTestVideoPath by remember { mutableStateOf<String?>(null) }
-
-    var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Color", "Transform", "Motion", "Graph Editor", "Color Space", "Timeline")
-
-    var showExportDialog by remember { mutableStateOf(false) }
-
-    LaunchedEffect(showScopes, timelinePreviewController, timelineViewModel) {
-        if (showScopes) {
-            kotlinx.coroutines.flow.combine(
-                timelineViewModel.uiState,
-                timelineViewModel.playheadFrame,
-                timelinePreviewController.activeClip
-            ) { state, frame, clip ->
-                ScopeAnalysisRequest(
-                    project = state.project,
-                    playheadFrame = frame,
-                    clipId = clip?.id ?: state.selectedClipId
-                )
-            }
-                .sample(100L)
-                .collect { request ->
-                    if (request.clipId == null) return@collect
-                    val bitmap = timelinePreviewController.extractCurrentFrameBitmap() ?: return@collect
-                    scopeViewModel.analyzeFrame(
-                        bitmap,
-                        com.example.timeline.engine.GradeEvaluationEngine.evaluateFrame(
-                            request.project,
-                            request.playheadFrame
-                        ),
-                        com.example.model.adjustments.ColorPipelineSettings()
-                    )
-                }
-        }
-    }
-
-    val isProxyActive = previewActiveAsset?.proxyStatus == com.example.timeline.media.ProxyStatus.READY
-
-    var lutSizeToBake by remember { mutableStateOf(33) }
-    
-    val coroutineScope = rememberCoroutineScope()
-    val exportLutLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/octet-stream")
-    ) { uri ->
-        if (uri != null) {
-            val params = colorAdjustmentViewModel.evaluateCurrentFrameAdjustments()
-            coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                try {
-                    val cr = context.contentResolver
-                    cr.openOutputStream(uri)?.use { stream ->
-                        com.example.model.colorgrade.lut.LutBakeEngine.bakeGradeToCubeStream(
-                            params, lutSizeToBake, stream, "ChromaPro_Grade"
-                        )
-                    }
-                } catch (e: Exception) {
-                    if (com.example.BuildConfig.DEBUG) e.printStackTrace()
-                }
-            }
-        }
-    }
-
     if (showExportDialog) {
-        com.example.ui.export.ExportScreen(
+        ExportScreen(
             project = timelineUiState.project,
-            onDismiss = { showExportDialog = false },
-            onFixTimeline = { timelineViewModel.fixTimelineForExport() },
-            onExportLut = { size ->
-                lutSizeToBake = size
-                showExportDialog = false
-                exportLutLauncher.launch("chromapro_LUT_${size}x${size}x${size}.cube")
-            }
+            onDismiss = { showExportDialog = false }
         )
     }
 
     Scaffold(
         topBar = {
-            if (!timelineUiState.showProjectSetup && !showAdvancedTimeline) {
-                com.example.ui.EditorTopBar(
-                    settings = timelineUiState.project.settings,
-                    isProxyActive = isProxyActive,
-                    onExportClick = { showExportDialog = true },
-                    onDebugClick = { timelineViewModel.toggleDebugPanel() },
-                    onToggleScopes = { showScopes = !showScopes }
-                )
-            }
+            EditorTopBar(
+                settings = timelineUiState.project.settings,
+                onExportClick = { showExportDialog = true }
+            )
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
@@ -227,140 +111,32 @@ fun ChromaProApp(viewModel: MainViewModel = viewModel()) {
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            val proxyProgress by timelineViewModel.proxyProgress.collectAsState()
-            var showSafeArea by remember { mutableStateOf(false) }
-            var showGuideOverlay by remember { mutableStateOf(false) }
-
             val launchers = com.example.timeline.ui.rememberMediaImportLaunchers(
                 onUrisPicked = { uris -> timelineViewModel.handlePickedUris(uris) }
             )
-
             var relinkAssetId by remember { mutableStateOf<String?>(null) }
-            val relinkLauncher = androidx.activity.compose.rememberLauncherForActivityResult(com.example.timeline.media.MediaPickerContract.OpenMultiple) { uris ->
-                relinkAssetId?.let { id ->
-                    uris.firstOrNull()?.let { uri ->
-                        timelineViewModel.relinkMedia(id, uri)
-                    }
+            val relinkLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+                contract = com.example.timeline.media.MediaPickerContract.OpenMultiple
+            ) { uris ->
+                relinkAssetId?.let { assetId ->
+                    uris.firstOrNull()?.let { uri -> timelineViewModel.relinkMedia(assetId, uri) }
                 }
                 relinkAssetId = null
             }
 
-            if (smokeTestVideoPath != null) {
-                com.example.ui.VlcSmokeTestScreen(
-                    videoPath = smokeTestVideoPath!!,
-                    onBack = { smokeTestVideoPath = null }
-                )
-                return@Scaffold
-            }
-
-            if (timelineUiState.showProjectSetup) {
-                com.example.timeline.ui.NewProjectScreen(
-                    onCreateProject = { settings ->
-                        timelineViewModel.createNewProject(settings)
-                    },
-                    onCancel = { }
-                )
-                return@Scaffold
-            }
-
-            if (com.example.BuildConfig.DEBUG && timelineUiState.showDebugPanel) {
-                val engine = timelinePreviewController.previewEngine
-                val playbackFailure = engine.currentPlaybackFailure?.value
-                val media3Metrics = (engine as? com.example.timeline.engine.preview.Media3FallbackPreviewEngine)
-                    ?.playbackMetrics?.collectAsState()?.value
-                val diagnostics = mapOf(
-                    "activeEngine" to engine.engineType.name,
-                    "previewState" to engine.currentState.collectAsState().value.name,
-                    "activeSource" to if (timelinePreviewController.activeSourceIsProxy.value) "PROXY" else "ORIGINAL",
-                    "playing" to engine.isPlaying.toString(),
-                    "positionUs" to engine.currentPositionUs.toString(),
-                    "durationUs" to engine.durationUs.toString(),
-                    "lastPlaybackErrorCode" to (playbackFailure?.errorCodeName ?: playbackFailure?.errorCode?.toString() ?: "none"),
-                    "lastPlaybackFailureCategory" to (playbackFailure?.category?.name ?: "none"),
-                    "lastPlaybackMimeType" to (playbackFailure?.mimeType ?: "unknown"),
-                    "lastPlaybackUriContext" to listOfNotNull(playbackFailure?.uriScheme, playbackFailure?.uriAuthority).joinToString(":"),
-                    "lastError" to (engine.currentError.collectAsState().value ?: "none"),
-                    "media3Decoder" to (media3Metrics?.videoDecoderName ?: "unknown"),
-                    "decoderInitMs" to (media3Metrics?.decoderInitializationDurationMs?.toString() ?: "unknown"),
-                    "droppedVideoFrames" to (media3Metrics?.droppedVideoFrames?.toString() ?: "unknown"),
-                    "avgFrameProcessingOffsetMs" to (media3Metrics?.averageVideoFrameProcessingOffsetMs?.toString() ?: "unknown"),
-                    "libVlcAvailable" to runCatching { Class.forName("org.videolan.libvlc.LibVLC"); "true" }.getOrDefault("false"),
-                    "libVlcPlaybackBackend" to if (
-                        engine.engineType == com.example.timeline.engine.preview.PreviewEngineType.VLC_NATIVE
-                    ) "LibVLC 3.5.1 Java API" else "not selected",
-                    "ffmpegPlaybackBackend" to if (
-                        engine.engineType == com.example.timeline.engine.preview.PreviewEngineType.FFMPEG_NATIVE
-                    ) "FFmpeg n8.1.3 JNI video decoder with Media3 audio" else "not selected",
-                    "nativeFfmpegPlayerAvailable" to (engine.engineType == com.example.timeline.engine.preview.PreviewEngineType.FFMPEG_NATIVE).toString(),
-                    "media3PrimaryUsed" to (engine.engineType == com.example.timeline.engine.preview.PreviewEngineType.MEDIA3_FALLBACK).toString(),
-                    "firstFrameRendered" to engine.firstFrameRendered.collectAsState().value.toString()
-                )
-                com.example.ui.DebugPanel(
-                    assets = timelineUiState.project.mediaAssets,
-                    clipsCount = timelineUiState.project.tracks.sumOf { it.clips.size },
-                    playheadFrame = timelineViewModel.playheadFrame.value,
-                    diagnostics = diagnostics,
-                    onTestVlc = { path -> smokeTestVideoPath = path }
-                )
-            }
-
-            if (showAdvancedTimeline) {
-                com.example.timeline.ui.AdvancedTimelineRoute(
-                    timelineViewModel = timelineViewModel,
-                    editorViewModel = editorViewModel,
-                    timelinePreviewController = timelinePreviewController,
-                    onRelinkRequest = { id -> relinkAssetId = id; relinkLauncher.launch(arrayOf("video/*", "image/*", "audio/*")) },
-                    onClose = {
-                        val finalState = timelineViewModel.uiState.value
-                        com.example.timeline.core.ActiveProjectManager.activeProject = finalState.project
-                        com.example.timeline.core.ActiveProjectManager.playheadFrame = timelineViewModel.playheadFrame.value
-                        com.example.timeline.core.ActiveProjectManager.selectedClipId = finalState.selectedClipId
-                        com.example.timeline.core.ActiveProjectManager.isDirty = false
-                        timelineViewModel.forceAutosaveProject()
-                        showAdvancedTimeline = false
-                    }
-                )
-                return@Scaffold
-            }
-
-            com.example.ui.editor.EditorScreen(
+            EditorScreen(
                 timelineViewModel = timelineViewModel,
                 colorAdjustmentViewModel = colorAdjustmentViewModel,
                 colorMatchViewModel = colorMatchViewModel,
                 scopeViewModel = scopeViewModel,
-                mainViewModel = viewModel,
                 editorViewModel = editorViewModel,
                 timelinePreviewController = timelinePreviewController,
-                onExportClick = { showExportDialog = true },
-                onDebugClick = { timelineViewModel.toggleDebugPanel() },
-                showScopes = showScopes,
-                onToggleScopes = { showScopes = !showScopes },
                 launchers = launchers,
-                relinkLauncher = relinkLauncher,
-                onRelinkRequest = { id -> 
-                    relinkAssetId = id
+                onRelinkRequest = { assetId ->
+                    relinkAssetId = assetId
                     relinkLauncher.launch(arrayOf("*/*"))
-                },
-                onOpenAdvancedTimeline = { 
-                    com.example.timeline.core.ActiveProjectManager.activeProject = timelineUiState.project
-                    com.example.timeline.core.ActiveProjectManager.playheadFrame = timelineViewModel.playheadFrame.value
-                    com.example.timeline.core.ActiveProjectManager.selectedClipId = timelineUiState.selectedClipId
-                    com.example.timeline.core.ActiveProjectManager.isDirty = false
-                    
-                    timelineViewModel.forceAutosaveProject()
-                    showAdvancedTimeline = true
                 }
             )
         }
     }
 }
-
-
-private data class ScopeAnalysisRequest(
-    val project: com.example.timeline.core.TimelineProject,
-    val playheadFrame: Long,
-    val clipId: String?
-)
-
-// Removed fake Timeline implementation
-

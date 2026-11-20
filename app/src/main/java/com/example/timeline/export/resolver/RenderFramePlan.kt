@@ -1,5 +1,7 @@
 package com.example.timeline.export.resolver
 
+import com.example.timeline.core.Rational
+
 data class RenderFramePlan(
     val outputFrameIndex: Long,
     val outputTimeUs: Long,
@@ -9,6 +11,6 @@ data class RenderFramePlan(
     val backgroundColor: String,
     val resolutionWidth: Int,
     val resolutionHeight: Int,
-    val frameRate: Float,
+    val frameRate: Rational,
     val requiredSourceFrames: Map<String, Long> 
 )

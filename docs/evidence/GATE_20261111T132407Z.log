@@ -1,0 +1,18 @@
+Timeline Core v2 gate: 20261111T132407Z
+Branch: arena/a2d6ebb0-cinema-cut-pro
+Compiler: c++ (Debian 12.2.0-14+deb12u1) 12.2.0
+
+== python3 tools/run_native_export_tests.py
+Native export engine tests passed.
+mcraw preview renderer test passed
+DecoderTest passed
+DecoderGyroTest passed
+DecoderAccelerometerTest passed
+
+== ./tools/run_timeline_core_tests.sh ''
+
+== ./tools/probe_cxx_conformance.sh ''
+
+BLOCKED: Java/JDK absent; Android Gradle compile and test tasks cannot start.
+
+GATE BLOCKED/FAILED (exit 2)

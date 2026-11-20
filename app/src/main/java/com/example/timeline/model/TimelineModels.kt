@@ -23,6 +23,10 @@ data class Marker(
 )
 
 @Serializable
+@Deprecated(
+    message = "Compile guard: migrate to com.example.timeline.core.TimelineClip and TimelineCoreV2Adapter",
+    level = DeprecationLevel.ERROR
+)
 data class Clip(
     val id: String = UUID.randomUUID().toString(),
     val mediaId: String,
@@ -38,6 +42,11 @@ data class Clip(
 }
 
 @Serializable
+@Suppress("DEPRECATION_ERROR")
+@Deprecated(
+    message = "Compile guard: migrate to com.example.timeline.core.TimelineTrack",
+    level = DeprecationLevel.ERROR
+)
 data class Track(
     val id: String = UUID.randomUUID().toString(),
     val type: TrackType,
@@ -46,6 +55,11 @@ data class Track(
 )
 
 @Serializable
+@Suppress("DEPRECATION_ERROR")
+@Deprecated(
+    message = "Compile guard: migrate to com.example.timeline.core.TimelineProject",
+    level = DeprecationLevel.ERROR
+)
 data class Timeline(
     val id: String = UUID.randomUUID().toString(),
     val name: String = "Sundance_Edit_Final",
@@ -54,6 +68,10 @@ data class Timeline(
     val markers: List<Marker> = emptyList()
 )
 
+@Deprecated(
+    message = "Compile guard: use com.example.timeline.core.FrameTimecode",
+    level = DeprecationLevel.ERROR
+)
 object TimecodeUtil {
     fun format(frames: Long, fps: Int): String {
         val f = frames % fps

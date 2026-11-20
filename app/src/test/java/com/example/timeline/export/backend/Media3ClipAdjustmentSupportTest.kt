@@ -77,10 +77,6 @@ class Media3ClipAdjustmentSupportTest {
 
     @Test
     fun unsupportedOrAnimatedAdjustmentsAreRejectedInsteadOfDropped() {
-        val withGrain = stack(VideoAdjustmentParams.default().copy(grainAmount = 0.25f))
-        val grainErrors = Media3ClipAdjustmentSupport.validationErrors(withGrain)
-        assertTrue(grainErrors.any { it.contains("film grain") })
-
         val animated = stack(VideoAdjustmentParams.default().copy(contrast = 0.2f)).copy(
             keyframes = listOf(
                 AdjustmentKeyframe(
@@ -96,6 +92,55 @@ class Media3ClipAdjustmentSupportTest {
             Media3ClipAdjustmentSupport.validationErrors(animated)
                 .any { it.contains("Animated clip adjustments") }
         )
+    }
+
+    @Test
+    fun advancedShaderRenderedAdjustmentsExportThroughTheSharedEffect() {
+        val params = VideoAdjustmentParams.default().copy(
+            highlights = 0.3f,
+            shadows = -0.2f,
+            whites = 0.15f,
+            blacks = -0.1f,
+            fade = 0.1f,
+            dehaze = 0.2f,
+            grainAmount = 0.25f,
+            vignetteAmount = -0.4f,
+            skinToneProtection = 0.5f,
+            shadowColorBalance = Vector3(0.1f, 0f, -0.1f),
+            hslHue = floatArrayOf(0.2f, 0f, 0f, 0f, 0f, 0f, 0f, 0f),
+            hslSat = floatArrayOf(0f, 0.3f, 0f, 0f, 0f, 0f, 0f, 0f),
+            hslLum = floatArrayOf(0f, 0f, 0.1f, 0f, 0f, 0f, 0f, 0f),
+            lutId = "cached-lut",
+            lutIntensity = 0.8f,
+            qualEnabled = true,
+            qualHueCenter = 0.35f,
+            qualHueWidth = 0.2f,
+            redChannelMultiplier = 1.1f,
+            rgbChannelMixer = floatArrayOf(1.1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f)
+        )
+        val adjustments = stack(params)
+
+        assertTrue(
+            Media3ClipAdjustmentSupport.validationErrors(adjustments).joinToString("\n"),
+            Media3ClipAdjustmentSupport.validationErrors(adjustments).isEmpty()
+        )
+        assertTrue(Media3ClipAdjustmentSupport.hasRenderableAdjustments(params))
+    }
+
+    @Test
+    fun outOfRangeAdvancedAdjustmentValuesAreRejectedBeforeShaderExecution() {
+        val invalid = stack(
+            VideoAdjustmentParams.default().copy(
+                grainAmount = 1.5f,
+                skinToneProtection = -0.2f,
+                vignetteMidpoint = 2f
+            )
+        )
+
+        val errors = Media3ClipAdjustmentSupport.validationErrors(invalid)
+        assertTrue(errors.any { it.contains("grain amount") && it.contains("supported ranges") })
+        assertTrue(errors.any { it.contains("skin-tone strength") && it.contains("supported ranges") })
+        assertTrue(errors.any { it.contains("vignette midpoint") && it.contains("supported ranges") })
     }
 
     @Test

@@ -19,9 +19,10 @@ fun ExportColorPanel(modifier: Modifier = Modifier) {
         Spacer(Modifier.height(8.dp))
         Text("Output: 8-bit SDR · Rec.709", style = MaterialTheme.typography.bodyLarge)
         Text(
-            "HDR, Rec.2020, HLG/PQ, and selectable tone mapping are not implemented by the current " +
-                "H.264/MP4 export path. HDR, log, and greater-than-8-bit source footage is rejected " +
-                "before rendering; it is not silently converted.",
+            "The export is always 8-bit SDR: HDR input is tone-mapped to SDR on Android 10+, and " +
+                "verified greater-than-8-bit SDR video is converted to 8-bit. Log or unknown-transfer " +
+                "sources are blocked. MotionCam Bayer RAW is developed to 8-bit SDR, not preserved " +
+                "as 10-bit. HDR output, Rec.2020 output, and selectable tone mapping are unavailable.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

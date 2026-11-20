@@ -30,6 +30,7 @@ fun MediaLibrarySheet(
                 launchers = launchers,
                 timelineViewModel = timelineViewModel,
                 onRelinkRequest = onRelinkRequest,
+                onDismiss = onDismiss,
                 modifier = Modifier.fillMaxSize()
             )
         }

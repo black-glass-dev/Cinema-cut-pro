@@ -3,6 +3,7 @@ package com.example.timeline.engine.preview
 import android.content.Context
 import com.example.timeline.core.TimelineClip
 import com.example.timeline.core.TimelineProject
+import com.example.timeline.core.TimelineFrameMath
 import com.example.timeline.media.MediaAsset
 import com.example.timeline.engine.preview.PreviewEngineSettings
 import com.example.timeline.engine.preview.PreviewEngineType
@@ -152,16 +153,25 @@ class TimelinePreviewController(private val context: Context) {
             val rate = project.settings.getFpsRational()
             if (rate.numerator <= 0 || rate.denominator <= 0) return@timeChanged
 
-            val fps = rate.numerator.toDouble() / rate.denominator.toDouble()
-            val sourceInUs = TimelineFrameResolver.convertFrameToMicroseconds(
-                clip.sourceIn,
-                rate.numerator,
-                rate.denominator
-            )
-            val offsetUs = currentUs - sourceInUs
-            val offsetFrames = (offsetUs * fps / 1_000_000.0).toLong()
-            val projectFrame = clip.timelineStart + offsetFrames
-            val boundedFrame = projectFrame.coerceIn(clip.timelineStart, (clip.timelineEnd - 1).coerceAtLeast(clip.timelineStart))
+            val sourceFrame = TimelineFrameResolver.microsecondsToFrames(currentUs, rate)
+                ?: return@timeChanged
+            val offsetFrames = try {
+                Math.subtractExact(sourceFrame, clip.sourceIn)
+            } catch (_: ArithmeticException) {
+                return@timeChanged
+            }
+            val projectFrame = try {
+                Math.addExact(clip.timelineStart, offsetFrames)
+            } catch (_: ArithmeticException) {
+                return@timeChanged
+            }
+            val clipEnd = try {
+                Math.addExact(clip.timelineStart, clip.duration)
+            } catch (_: ArithmeticException) {
+                return@timeChanged
+            }
+            val lastFrame = if (clipEnd > clip.timelineStart) clipEnd - 1L else clip.timelineStart
+            val boundedFrame = projectFrame.coerceIn(clip.timelineStart, lastFrame)
 
             if (now - lastEmittedTimeMs >= 30L && boundedFrame != lastPlayheadFrame) {
                 lastPlayheadFrame = boundedFrame
@@ -170,7 +180,7 @@ class TimelinePreviewController(private val context: Context) {
             }
 
             val playbackWasActive = engine.isPlaying || engine.currentState.value == PreviewState.PLAYING
-            if (projectFrame >= clip.timelineEnd && playbackWasActive) {
+            if (projectFrame >= clipEnd && playbackWasActive) {
                 handlePlaybackBoundary(engine, project, clip)
             }
         }
@@ -258,11 +268,12 @@ class TimelinePreviewController(private val context: Context) {
             if (project != null && clip != null && asset != null) {
                 val rate = project.settings.getFpsRational()
                 val sourceFrame = TimelineFrameResolver.resolveSourceFrame(lastPlayheadFrame, clip)
+                    ?: throw ArithmeticException("Source frame overflows Long")
                 val sourcePositionUs = TimelineFrameResolver.convertFrameToMicroseconds(
                     sourceFrame,
                     rate.numerator,
                     rate.denominator
-                )
+                ) ?: throw ArithmeticException("Source timestamp overflows Long")
                 val sourcePositionMs = sourcePositionUs / 1_000L
                 val source = resolveSource(asset)
                 val evaluatedParams = evaluatedPreviewParams(project, lastPlayheadFrame)
@@ -389,10 +400,17 @@ class TimelinePreviewController(private val context: Context) {
             return
         }
 
-        val sourceFrame = TimelineFrameResolver.resolveSourceFrame(playheadFrame, topClip)
         val rat = project.settings.getFpsRational()
-        val sourcePositionMs = TimelineFrameResolver.convertFrameToMicroseconds(sourceFrame, rat.numerator, rat.denominator) / 1000
-        val sourcePositionUs = sourcePositionMs * 1000
+        val sourcePosition = TimelineFrameResolver.resolveSourceFrame(playheadFrame, topClip)
+            ?.let { frame -> TimelineFrameResolver.convertFrameToMicroseconds(frame, rat.numerator, rat.denominator) }
+        if (sourcePosition == null) {
+            activePreviewSource = null
+            _activeSourceIsProxy.value = false
+            if (previewEngine is Media3FallbackPreviewEngine) previewEngine.clearMedia()
+            return
+        }
+        val sourcePositionUs = sourcePosition
+        val sourcePositionMs = sourcePositionUs / 1_000L
 
         val evaluatedParams = evaluatedPreviewParams(project, playheadFrame)
 
@@ -447,8 +465,9 @@ class TimelinePreviewController(private val context: Context) {
         val asset = _activeAsset.value ?: return null
         val uriStr = PreviewSourceResolver.resolvePlayableUri(asset, false, forceOriginal = true).first ?: return null
         val rat = activeProject?.settings?.getFpsRational() ?: return null
-        val sourceFrame = TimelineFrameResolver.resolveSourceFrame(lastPlayheadFrame, clip)
+        val sourceFrame = TimelineFrameResolver.resolveSourceFrame(lastPlayheadFrame, clip) ?: return null
         val sourceTimeUs = TimelineFrameResolver.convertFrameToMicroseconds(sourceFrame, rat.numerator, rat.denominator)
+            ?: return null
         return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             if (com.example.timeline.media.MotionCamRawFormat.isMcrawAsset(asset)) {
                 var handle = 0L
@@ -571,26 +590,18 @@ class TimelinePreviewController(private val context: Context) {
             return
         }
 
-        val playerPosMs = previewEngine.currentPositionUs / 1000
-        
-        val rat = activeProject?.settings?.getFpsRational()
-        if (rat == null) return
-        
-        val fpsNum = rat.numerator
-        val fpsDen = rat.denominator
-        
-        fun sourcePositionToTimelineFrame(
-            positionMs: Long,
-            clipTimelineStartFrame: Long,
-            clipSourceInFrame: Long
-        ): Long {    
-            val currentSourceFrame = (positionMs / 1000.0 * fpsNum / fpsDen).toLong()
-            return clipTimelineStartFrame + (currentSourceFrame - clipSourceInFrame)
+        val playerPositionUs = previewEngine.currentPositionUs.coerceAtLeast(0L)
+        val rat = activeProject?.settings?.getFpsRational() ?: return
+        val currentSourceFrame = TimelineFrameMath.framesFromMicroseconds(playerPositionUs, rat) ?: return
+        val newProjFrame = try {
+            Math.addExact(
+                clip.timelineStart,
+                Math.subtractExact(currentSourceFrame, clip.sourceIn)
+            )
+        } catch (_: ArithmeticException) {
+            return
         }
-        
-        val newProjFrame = sourcePositionToTimelineFrame(
-            playerPosMs, clip.timelineStart, clip.sourceIn
-        )
+        val playerPosMs = playerPositionUs / 1_000L
         // only callback if valid
         if (newProjFrame >= clip.timelineStart && newProjFrame < clip.timelineEnd) {
              val changed = newProjFrame != lastPlayheadFrame

@@ -10,23 +10,22 @@ class MoveClipCommand(
     override val timestamp: Long = System.currentTimeMillis()
 ) : TimelineCommand {
 
-    override fun execute(project: TimelineProject): TimelineResult {
-        return performMove(project, newStartFrame)
-    }
+    override fun execute(project: TimelineProject): TimelineResult = performMove(project, newStartFrame)
 
-    override fun undo(project: TimelineProject): TimelineResult {
-        return performMove(project, oldStartFrame)
-    }
+    override fun undo(project: TimelineProject): TimelineResult = performMove(project, oldStartFrame)
 
-    override fun redo(project: TimelineProject): TimelineResult {
-        return performMove(project, newStartFrame)
-    }
+    override fun redo(project: TimelineProject): TimelineResult = performMove(project, newStartFrame)
 
     private fun performMove(project: TimelineProject, targetFrame: Long): TimelineResult {
-        val clip = project.tracks.flatMap { it.clips }.find { it.id == clipId }
-            ?: return TimelineResult(project, "Clip not found")
-        val newClip = clip.copy(timelineStart = targetFrame)
-        val p1 = CoreEditEngine.deleteClips(project, listOf(clipId)).project
-        return CoreTimelineEngine.addClip(p1, trackId, newClip)
+        val sourceTrack = project.tracks.firstOrNull { track ->
+            track.clips.any { clip -> clip.id == clipId }
+        } ?: return TimelineResult(project, "TL_E_CLIP_NOT_FOUND")
+        return CoreTimelineEngine.moveClipToTrack(
+            project = project,
+            clipId = clipId,
+            sourceTrackId = sourceTrack.id,
+            destTrackId = trackId,
+            newTimelineStart = targetFrame
+        )
     }
 }

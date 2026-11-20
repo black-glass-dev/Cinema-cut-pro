@@ -13,20 +13,20 @@ class NativeFfmpegExportBackend : ExportBackend {
         return ExportBackendCapability(
             backendAvailable = isFfmpegAvailable,
             hardwareAccelerated = false,
-            supportedCodecs = listOf(ExportCodec.H264, ExportCodec.H265, ExportCodec.PRORES, ExportCodec.AV1, ExportCodec.IMAGE_SEQUENCE),
-            supportedContainers = listOf(ExportContainer.MP4, ExportContainer.MOV, ExportContainer.MKV),
-            maxResolutionWidth = 8192,
-            maxResolutionHeight = 4320,
-            maxFps = 120f,
-            supportsHDR = true,
-            supportsAlpha = true,
-            supportsAudioMix = true,
-            supportsVideoComposition = true,
-            supportsProRes = true,
-            supportsAV1 = true,
-            supports10Bit = true,
-            supportsBatch = true,
-            supportsCancel = true
+            supportedCodecs = emptyList(),
+            supportedContainers = emptyList(),
+            maxResolutionWidth = 0,
+            maxResolutionHeight = 0,
+            maxFps = 0f,
+            supportsHDR = false,
+            supportsAlpha = false,
+            supportsAudioMix = false,
+            supportsVideoComposition = false,
+            supportsProRes = false,
+            supportsAV1 = false,
+            supports10Bit = false,
+            supportsBatch = false,
+            supportsCancel = false
         )
     }
     

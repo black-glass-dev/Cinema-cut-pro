@@ -1,7 +1,9 @@
 package com.example.timeline.export.resolver
 
+import com.example.timeline.core.Rational
 import com.example.timeline.core.TimelineProject
 import com.example.timeline.core.TrackType
+import com.example.timeline.engine.preview.TimelineFrameResolver
 import com.example.timeline.export.model.ExportSettings
 
 class TimelineRenderResolver(
@@ -10,12 +12,15 @@ class TimelineRenderResolver(
 ) {
 
     fun createPlanForFrame(outputFrameIndex: Long): RenderFramePlan {
-        val outputTimeUs = ExportFrameTimeMapper.outputFrameToTimeUs(outputFrameIndex, exportSettings)
+        val outputTimeUs = requireNotNull(
+            ExportFrameTimeMapper.outputFrameToTimeUs(outputFrameIndex, exportSettings)
+        ) { "Output frame timestamp is invalid or overflows Long" }
         val projectFpsRational = project.settings.getFpsRational()
-        val projectFps = projectFpsRational.toFloat()
-        
-        // Convert outputTimeUs back to the project's timeline frame
-        val projectFrame = ExportFrameTimeMapper.timeUsToProjectFrame(outputTimeUs, projectFpsRational)
+
+        // Convert outputTimeUs back to the project's timeline frame with exact integer math.
+        val projectFrame = requireNotNull(
+            ExportFrameTimeMapper.timeUsToProjectFrame(outputTimeUs, projectFpsRational)
+        ) { "Project frame conversion is invalid or overflows Long" }
 
         val activeVideoLayers = mutableListOf<RenderClipInstance>()
         val activeAudioLayers = mutableListOf<RenderClipInstance>()
@@ -59,10 +64,13 @@ class TimelineRenderResolver(
                         continue
                     }
 
-                    // Map projectFrame back to clip's sourceFrame
-                    val offsetFromClipStart = projectFrame - clip.timelineStart
-                    val sourceFrame = clip.sourceIn + offsetFromClipStart
-                    val sourceTimeUs = ExportFrameTimeMapper.projectFrameToTimeUs(sourceFrame, projectFpsRational)
+                    // Map projectFrame back to clip's sourceFrame using checked integer offsets.
+                    val sourceFrame = requireNotNull(TimelineFrameResolver.resolveSourceFrame(projectFrame, clip)) {
+                        "Source frame conversion overflows Long for clip ${clip.id}"
+                    }
+                    val sourceTimeUs = requireNotNull(
+                        ExportFrameTimeMapper.projectFrameToTimeUs(sourceFrame, projectFpsRational)
+                    ) { "Source timestamp conversion overflows Long for clip ${clip.id}" }
 
                     val useProxy = exportSettings.allowProxyExport && mediaAsset.proxyInfo != null && mediaAsset.proxyInfo.isProxyGenerated
                     
@@ -103,7 +111,10 @@ class TimelineRenderResolver(
             backgroundColor = project.settings.canvasBackgroundColor,
             resolutionWidth = exportSettings.resolutionWidth,
             resolutionHeight = exportSettings.resolutionHeight,
-            frameRate = exportSettings.frameRate.floatValue,
+            frameRate = Rational(
+                exportSettings.frameRate.numerator,
+                exportSettings.frameRate.denominator
+            ),
             requiredSourceFrames = requiredSourceFrames
         )
     }

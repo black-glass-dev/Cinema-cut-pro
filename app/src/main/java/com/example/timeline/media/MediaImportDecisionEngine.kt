@@ -87,7 +87,11 @@ class MediaImportDecisionEngine {
                         warnings.add("A hardware decoder was not confirmed for $mimeType; direct playback may stutter and a proxy is recommended.")
                     }
                     if (isHighWorkload) {
-                        warnings.add("High decode workload detected (${result.width}×${result.height} at ${result.frameRate} fps); a proxy is recommended for smoother editing.")
+                        val rateDescription = result.frameRate
+                            ?.takeIf { it.isFinite() && it > 0f }
+                            ?.let { "$it fps" }
+                            ?: "unknown frame rate"
+                        warnings.add("High decode workload detected (${result.width}×${result.height} at $rateDescription); a proxy is recommended for smoother editing.")
                     }
                     if (isHevc && isHdr) {
                         warnings.add("HDR HEVC media can be demanding for preview; a proxy is recommended for smoother editing.")
@@ -121,7 +125,7 @@ class MediaImportDecisionEngine {
     private fun isHighDecodeWorkload(result: MediaAnalysisResult): Boolean {
         val width = result.width.coerceAtLeast(0)
         val height = result.height.coerceAtLeast(0)
-        val frameRate = result.frameRate.takeIf { it.isFinite() && it > 0f } ?: 0f
+        val frameRate = result.frameRate?.takeIf { it.isFinite() && it > 0f } ?: 0f
         val pixelsPerSecond = width.toDouble() * height.toDouble() * frameRate.toDouble()
         val baseline1080p30 = 1920.0 * 1080.0 * 30.0
         return maxOf(width, height) >= 2560 ||

@@ -1,0 +1,201 @@
+Timeline Core v2 gate: 20261120T063018Z
+Branch: arena/a2d6ebb0-cinema-cut-pro
+Compiler: c++ (Debian 12.2.0-14+deb12u1) 12.2.0
+
+== Native export regression suite: python3 tools/run_native_export_tests.py
+Native export engine tests passed.
+mcraw preview renderer test passed
+DecoderTest passed
+DecoderGyroTest passed
+DecoderAccelerometerTest passed
+
+== Timeline Core v2 direct C++23 tests: ./tools/run_timeline_core_tests.sh
+Timeline Core v2 tests passed: 170624 assertions; 10,000 snap-oracle cases, 10,000 randomized multi-track history operations, and 10,000 single-clip undo/redo cycles.
+
+== C++23 conformance probe: ./tools/probe_cxx_conformance.sh
+Generated /home/user/Cinema-cut-pro/build/generated/cxx_features.hpp using c++ -std=c++23
+#pragma once
+#define TL_CXX2C_FLAG_AVAILABLE 0
+#define TL_CXX_FEATURE_PROBE_CPLUSPLUS 202100L
+#define TL_HAVE_STD_EXPECTED 1
+#define TL_HAVE_STD_MDSPAN 0
+#define TL_HAVE_STD_FORMAT 0
+#define TL_HAVE_STD_GENERATOR 0
+#define TL_HAVE_STD_FLAT_MAP 0
+#define TL_HAVE_STD_INPLACE_VECTOR 0
+#define TL_HAVE_STD_SIMD 0
+
+== CMake host-debug configure: /tmp/arena-cinema-host-tools/cmake/data/bin/cmake --preset host-debug
+Preset CMake variables:
+
+  CMAKE_BUILD_TYPE="Debug"
+  TL_BUILD_TESTS="ON"
+
+-- The CXX compiler identification is GNU 12.2.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Configuring done (0.2s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/user/Cinema-cut-pro/build/cmake/host-debug
+
+== CMake host-debug build: /tmp/arena-cinema-host-tools/cmake/data/bin/cmake --build --preset host-debug
+[1/4] Building CXX object app/src/main/cpp/timeline_core_v2/CMakeFiles/timeline_core_v2_tests.dir/tests/timeline_core_test.cpp.o
+[2/4] Building CXX object app/src/main/cpp/timeline_core_v2/CMakeFiles/timeline_core_v2.dir/src/timeline_core.cpp.o
+[3/4] Linking CXX static library app/src/main/cpp/timeline_core_v2/libtimeline_core_v2.a
+[4/4] Linking CXX executable app/src/main/cpp/timeline_core_v2/timeline_core_v2_tests
+
+== CMake host-debug CTest: /tmp/arena-cinema-host-tools/cmake/data/bin/ctest --preset host-debug --no-tests=error
+Test project /home/user/Cinema-cut-pro/build/cmake/host-debug
+    Start 1: timeline_core_v2_tests
+1/1 Test #1: timeline_core_v2_tests ...........   Passed    1.57 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   1.57 sec
+
+== CMake host-release configure: /tmp/arena-cinema-host-tools/cmake/data/bin/cmake --preset host-release
+Preset CMake variables:
+
+  CMAKE_BUILD_TYPE="Release"
+  TL_BUILD_TESTS="ON"
+
+-- The CXX compiler identification is GNU 12.2.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Configuring done (0.2s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/user/Cinema-cut-pro/build/cmake/host-release
+
+== CMake host-release build: /tmp/arena-cinema-host-tools/cmake/data/bin/cmake --build --preset host-release
+[1/4] Building CXX object app/src/main/cpp/timeline_core_v2/CMakeFiles/timeline_core_v2_tests.dir/tests/timeline_core_test.cpp.o
+[2/4] Building CXX object app/src/main/cpp/timeline_core_v2/CMakeFiles/timeline_core_v2.dir/src/timeline_core.cpp.o
+[3/4] Linking CXX static library app/src/main/cpp/timeline_core_v2/libtimeline_core_v2.a
+[4/4] Linking CXX executable app/src/main/cpp/timeline_core_v2/timeline_core_v2_tests
+
+== CMake host-release CTest: /tmp/arena-cinema-host-tools/cmake/data/bin/ctest --preset host-release --no-tests=error
+Test project /home/user/Cinema-cut-pro/build/cmake/host-release
+    Start 1: timeline_core_v2_tests
+1/1 Test #1: timeline_core_v2_tests ...........   Passed    0.13 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.14 sec
+
+== CMake host-asan configure: /tmp/arena-cinema-host-tools/cmake/data/bin/cmake --preset host-asan
+Preset CMake variables:
+
+  CMAKE_BUILD_TYPE="Debug"
+  CMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+  CMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+  TL_BUILD_TESTS="ON"
+
+-- The CXX compiler identification is GNU 12.2.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Configuring done (0.5s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/user/Cinema-cut-pro/build/cmake/host-asan
+
+== CMake host-asan build: /tmp/arena-cinema-host-tools/cmake/data/bin/cmake --build --preset host-asan
+[1/4] Building CXX object app/src/main/cpp/timeline_core_v2/CMakeFiles/timeline_core_v2_tests.dir/tests/timeline_core_test.cpp.o
+[2/4] Building CXX object app/src/main/cpp/timeline_core_v2/CMakeFiles/timeline_core_v2.dir/src/timeline_core.cpp.o
+[3/4] Linking CXX static library app/src/main/cpp/timeline_core_v2/libtimeline_core_v2.a
+[4/4] Linking CXX executable app/src/main/cpp/timeline_core_v2/timeline_core_v2_tests
+
+== CMake host-asan CTest: /tmp/arena-cinema-host-tools/cmake/data/bin/ctest --preset host-asan --no-tests=error
+Test project /home/user/Cinema-cut-pro/build/cmake/host-asan
+    Start 1: timeline_core_v2_tests
+1/1 Test #1: timeline_core_v2_tests ...........   Passed    4.41 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   4.41 sec
+
+== CMake host-coverage configure: /tmp/arena-cinema-host-tools/cmake/data/bin/cmake --preset host-coverage
+Preset CMake variables:
+
+  CMAKE_BUILD_TYPE="Debug"
+  CMAKE_CXX_FLAGS="--coverage -fprofile-arcs -ftest-coverage"
+  CMAKE_EXE_LINKER_FLAGS="--coverage"
+  TL_BUILD_TESTS="ON"
+
+-- The CXX compiler identification is GNU 12.2.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Configuring done (0.3s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/user/Cinema-cut-pro/build/cmake/host-coverage
+
+== CMake host-coverage build: /tmp/arena-cinema-host-tools/cmake/data/bin/cmake --build --preset host-coverage
+[1/4] Building CXX object app/src/main/cpp/timeline_core_v2/CMakeFiles/timeline_core_v2_tests.dir/tests/timeline_core_test.cpp.o
+[2/4] Building CXX object app/src/main/cpp/timeline_core_v2/CMakeFiles/timeline_core_v2.dir/src/timeline_core.cpp.o
+[3/4] Linking CXX static library app/src/main/cpp/timeline_core_v2/libtimeline_core_v2.a
+[4/4] Linking CXX executable app/src/main/cpp/timeline_core_v2/timeline_core_v2_tests
+
+== CMake host-coverage CTest: /tmp/arena-cinema-host-tools/cmake/data/bin/ctest --preset host-coverage --no-tests=error
+Test project /home/user/Cinema-cut-pro/build/cmake/host-coverage
+    Start 1: timeline_core_v2_tests
+1/1 Test #1: timeline_core_v2_tests ...........   Passed    1.70 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   1.70 sec
+
+== Timeline Core line/branch coverage gate: python3 tools/check_timeline_core_coverage.py
+File '/home/user/Cinema-cut-pro/app/src/main/cpp/timeline_core_v2/src/timeline_core.cpp'
+Lines executed:84.00% of 1244
+Branches executed:97.94% of 1360
+Taken at least once:65.59% of 1360
+Timeline Core v2 coverage: lines 84.00%/80.00% minimum (1244 executable); branches taken 65.59%/60.00% minimum (1360 branches)
+
+== CMake host-benchmark configure: /tmp/arena-cinema-host-tools/cmake/data/bin/cmake --preset host-benchmark
+Preset CMake variables:
+
+  CMAKE_BUILD_TYPE="Release"
+  TL_BUILD_BENCHMARKS="ON"
+  TL_BUILD_TESTS="OFF"
+
+-- The CXX compiler identification is GNU 12.2.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Configuring done (0.2s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/user/Cinema-cut-pro/build/cmake/host-benchmark
+
+== CMake host-benchmark build: /tmp/arena-cinema-host-tools/cmake/data/bin/cmake --build --preset host-benchmark --target timeline_core_v2_benchmark
+[1/4] Building CXX object app/src/main/cpp/timeline_core_v2/CMakeFiles/timeline_core_v2_benchmark.dir/tests/timeline_core_benchmark.cpp.o
+[2/4] Building CXX object app/src/main/cpp/timeline_core_v2/CMakeFiles/timeline_core_v2.dir/src/timeline_core.cpp.o
+[3/4] Linking CXX static library app/src/main/cpp/timeline_core_v2/libtimeline_core_v2.a
+[4/4] Linking CXX executable app/src/main/cpp/timeline_core_v2/timeline_core_v2_benchmark
+
+== Host-only Timeline Core microbenchmark: build/cmake/host-benchmark/app/src/main/cpp/timeline_core_v2/timeline_core_v2_benchmark
+validate clips=500 tracks=20 iterations=30 p50_us=10.416 p95_us=10.919
+visible_query clips=500 tracks=20 iterations=30 p50_us=12.631 p95_us=15.095
+snap clips=500 tracks=20 iterations=30 p50_us=15.057 p95_us=15.376
+apply_move clips=500 tracks=20 iterations=30 p50_us=63.723 p95_us=78.609
+validate clips=10000 tracks=20 iterations=30 p50_us=285.747 p95_us=310.454
+visible_query clips=10000 tracks=20 iterations=30 p50_us=311.764 p95_us=331.712
+snap clips=10000 tracks=20 iterations=30 p50_us=373.274 p95_us=416.723
+apply_move clips=10000 tracks=20 iterations=30 p50_us=1692.76 p95_us=1744.3
+host benchmark sink=6366843792371631804
+
+== Whitespace/error check: git diff --check
+
+BLOCKED: Java/JDK absent; Android Gradle tests and :app:assembleDebug cannot start.
+
+GATE BLOCKED/FAILED (exit 2)

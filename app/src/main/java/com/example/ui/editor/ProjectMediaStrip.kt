@@ -12,22 +12,21 @@ fun ProjectMediaStrip(
     launchers: com.example.timeline.ui.MediaImportLaunchers,
     timelineViewModel: TimelineViewModel,
     onRelinkRequest: (String) -> Unit,
+    onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     com.example.timeline.ui.MediaBinPanel(
-        mediaAssets = mediaAssets,
+        mediaAssets = mediaAssets.filter { it.assetType == com.example.timeline.media.MediaAssetType.VIDEO },
         proxyProgressMap = proxyProgressMap,
         onImportVideoClick = {
             launchers.videoLauncher.launch(
                 arrayOf("video/*", com.example.timeline.media.MotionCamRawFormat.MIME_TYPE, "application/octet-stream")
             )
         },
-        onImportAudioClick = { launchers.audioLauncher.launch(arrayOf("audio/*")) },
-        onImportImageClick = { launchers.imageLauncher.launch(arrayOf("image/*")) },
-        onImportImageSequenceClick = { launchers.imageSequenceLauncher.launch(arrayOf("image/*")) },
-        onImportAnyClick = { launchers.anyLauncher.launch(arrayOf("*/*")) },
-        onAssetClick = { asset -> timelineViewModel.addClipFromMedia(asset) },
-        onAssetOptionClick = { asset, mode -> timelineViewModel.addClipFromMediaWithMode(asset, mode) },
+        onAssetClick = { asset ->
+            timelineViewModel.addClipFromMedia(asset)
+            onDismiss()
+        },
         onRetryImport = { timelineViewModel.retryMediaAsset(it) },
         onGenerateProxy = { timelineViewModel.generateProxy(it) },
         onCancelProxy = { timelineViewModel.cancelProxy(it) },

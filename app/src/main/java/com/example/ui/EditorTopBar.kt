@@ -1,113 +1,65 @@
 package com.example.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Equalizer
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material3.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import com.example.timeline.core.ProjectSettings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorTopBar(
     settings: ProjectSettings?,
-    isProxyActive: Boolean,
     onExportClick: () -> Unit,
-    onDebugClick: () -> Unit = {},
-    onToggleScopes: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     TopAppBar(
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Filled.Movie,
-                        contentDescription = "Project",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(12.dp))
+                Icon(
+                    imageVector = Icons.Filled.Movie,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(10.dp))
                 Column {
-                    if (settings != null) {
-                        Text(
-                            text = "CINEMA CUT PRO",
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            letterSpacing = 0.8.sp
-                        )
-                        Text(
-                            text = settings.projectName,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-
-                        val resolution = "${settings.resolutionWidth}x${settings.resolutionHeight}"
-                        val resLabel = when {
-                            settings.resolutionWidth >= 3840 -> "4K"
-                            settings.resolutionWidth >= 1920 -> "HD"
-                            else -> resolution
-                        }
-
-                        val rational = settings.getFpsRational()
-                        val fpsStr = if (rational.denominator == 1) {
-                            "${rational.numerator} FPS"
-                        } else {
-                            val floatFps = rational.numerator.toFloat() / rational.denominator
-                            String.format("%.3f FPS", floatFps).replace(Regex("0+$"), "").removeSuffix(".")
-                        }
-
-                        val colorSpaceLabel = settings.colorSpace.displayName
-                        val proxyLabel = if (isProxyActive) " • PROXY" else ""
-
-                        Text(
-                            text = "$resLabel • $fpsStr • $colorSpaceLabel$proxyLabel",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.Medium,
-                            letterSpacing = 0.5.sp
-                        )
-                    } else {
-                        Text(
-                            text = "Loading Project...",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
+                    Text(
+                        text = "CINEMA CUT PRO",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        letterSpacing = 0.8.sp
+                    )
+                    Text(
+                        text = settings?.projectName ?: "Untitled",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                 }
             }
         },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
         actions = {
-            IconButton(onClick = onToggleScopes) {
-                Icon(Icons.Filled.Equalizer, contentDescription = "Scopes")
-            }
-            if (com.example.BuildConfig.DEBUG) {
-                IconButton(onClick = onDebugClick) {
-                    Icon(Icons.Filled.Info, contentDescription = "Developer diagnostics")
-                }
-            }
             Button(
                 onClick = onExportClick,
                 colors = ButtonDefaults.buttonColors(
@@ -116,11 +68,14 @@ fun EditorTopBar(
                 ),
                 shape = CircleShape,
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                modifier = Modifier.padding(end = 8.dp).height(32.dp)
+                modifier = Modifier.padding(end = 8.dp).height(36.dp)
             ) {
                 Text("Export", fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         },
-        modifier = modifier.heightIn(min = 56.dp, max = 64.dp)
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        modifier = modifier
     )
 }

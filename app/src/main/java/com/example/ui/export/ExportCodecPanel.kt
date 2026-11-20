@@ -20,7 +20,8 @@ fun ExportCodecPanel(modifier: Modifier = Modifier) {
         Text("MP4 container · H.264 video", style = MaterialTheme.typography.bodyLarge)
         Text(
             "This is the only video format currently implemented by the Android export backend. " +
-                "HEVC, AV1, ProRes, MOV, MKV, and image-sequence export are not available yet.",
+                "MotionCam RAW (.mcraw) is developed to 8-bit SDR before H.264 encoding when the device has a compatible encoder. " +
+                "10-bit output, ProRes (all profiles), APV, HEVC, AV1, MOV, MKV, and image-sequence export are not available.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

@@ -22,7 +22,6 @@ fun ViewportStatusCard(
     onRequestProxy: (String) -> Unit,
     onRequestRelink: (String) -> Unit,
     onRetryPlayback: () -> Unit,
-    onSwitchEngine: (com.example.timeline.engine.preview.PreviewEngineType) -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (currentAsset == null && playerError == null) return
@@ -110,19 +109,11 @@ fun ViewportStatusCard(
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(2.dp)) {
                 Text(msg, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 Spacer(modifier = Modifier.width(8.dp))
-                Button(onClick = onRetryPlayback, modifier = Modifier.height(32.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) { Text("Retry") }
-                
-                if (engineType == com.example.timeline.engine.preview.PreviewEngineType.FFMPEG_NATIVE ||
-                    engineType == com.example.timeline.engine.preview.PreviewEngineType.VLC_NATIVE
-                ) {
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Button(onClick = { onSwitchEngine(com.example.timeline.engine.preview.PreviewEngineType.MEDIA3_FALLBACK) }, modifier = Modifier.height(32.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) { Text("Use Media3") }
-                } else if (engineType == com.example.timeline.engine.preview.PreviewEngineType.MEDIA3_FALLBACK ||
-                    engineType == com.example.timeline.engine.preview.PreviewEngineType.AUTO
-                ) {
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Button(onClick = { onSwitchEngine(com.example.timeline.engine.preview.PreviewEngineType.STILL_FRAME) }, modifier = Modifier.height(32.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) { Text("Fallback to Still") }
-                }
+                Button(
+                    onClick = onRetryPlayback,
+                    modifier = Modifier.height(32.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                ) { Text("Retry") }
             }
         }
     }

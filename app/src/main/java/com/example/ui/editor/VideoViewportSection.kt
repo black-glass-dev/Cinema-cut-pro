@@ -16,7 +16,6 @@ import com.example.timeline.engine.preview.shouldGenerateAdaptiveProxy
 import com.example.timeline.ui.TimelineViewModel
 import com.example.ui.editor.viewport.*
 import com.example.timeline.ui.viewport.CleanVideoCanvas
-import com.example.timeline.ui.viewport.ViewportSettingsMenu
 
 @Composable
 fun VideoViewportSection(
@@ -60,9 +59,6 @@ fun VideoViewportSection(
     val automaticProxyRequests = remember(project.id) { mutableSetOf<String>() }
     val latestIsPlaying by rememberUpdatedState(isPlaying)
     
-    var showSafeArea by remember { mutableStateOf(false) }
-    var showGuideOverlay by remember { mutableStateOf(false) }
-    var showSettingsMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(project) {
         timelinePreviewController.onProjectChanged(project)
@@ -271,23 +267,20 @@ fun VideoViewportSection(
                     isSamplingColor = isSampling,
                     onColorSampled = onColorSampled,
                     timelineViewModel = timelineViewModel,
-                    showSafeArea = showSafeArea,
-                    showGuideOverlay = showGuideOverlay,
+                    showSafeArea = false,
+                    showGuideOverlay = false,
                     modifier = Modifier.size(canvasWidth, canvasHeight)
                 )
             }
 
             Spacer(modifier = Modifier.height(8.dp))
             ViewportControlBar(
-                timelineViewModel = timelineViewModel,
                 isPlaying = isPlaying,
                 onTogglePlay = { timelineViewModel.togglePlay() },
-                showSafeArea = showSafeArea,
-                onShowSafeAreaChanged = { showSafeArea = it },
-                showGuideOverlay = showGuideOverlay,
-                onShowGuideOverlayChanged = { showGuideOverlay = it },
-                timecodeText = com.example.timeline.core.FrameTimecode.frameToTimecode(playheadFrame, settings.getFpsRational().toFloat().toInt()),
-                onSettingsClick = { showSettingsMenu = true }
+                timecodeText = com.example.timeline.core.FrameTimecode.frameToTimecode(
+                    playheadFrame,
+                    settings.getFpsRational().toFloat().toInt()
+                )
             )
             // Resolve status from the current project snapshot by active clip id so the viewport
             // and Project Media do not briefly report different proxy states after an update.
@@ -298,60 +291,13 @@ fun VideoViewportSection(
                 isProxySource = activeSourceIsProxy,
                 onRequestProxy = { timelineViewModel.generateProxy(it) },
                 onRequestRelink = onRelinkRequest,
-                onRetryPlayback = { 
+                onRetryPlayback = {
                     timelinePreviewController.loadProject(project)
                     timelinePreviewController.seekToTimelineFrame(project, playheadFrame)
                     if (isPlaying) timelinePreviewController.play()
-                },
-                onSwitchEngine = { type ->
-                    timelinePreviewController.setEngineType(type)
-                    editorViewModel.updateSelectedEngine(type)
                 }
             )
         }
 
-        // Settings Menu Overlay
-        if (showSettingsMenu) {
-            androidx.compose.ui.window.Dialog(onDismissRequest = { showSettingsMenu = false }) {
-                ViewportSettingsMenu(
-                    activeEngine = engineType,
-                    settings = previewSettings,
-                    onSettingsChanged = { newSettings ->
-                        editorViewModel.updateSelectedEngine(newSettings.selectedEngine)
-                        editorViewModel.updatePreviewMode(newSettings.previewMode)
-                        if (newSettings.showDebugOverlay != previewSettings.showDebugOverlay) {
-                            editorViewModel.toggleDebugOverlay()
-                        }
-                        if (newSettings.autoFallbackOnFailure != previewSettings.autoFallbackOnFailure) {
-                            editorViewModel.toggleAutoFallback()
-                        }
-                        if (newSettings.autoGenerateProxy != previewSettings.autoGenerateProxy) {
-                            editorViewModel.toggleAutoGenerateProxy()
-                        }
-                    },
-                    onEngineSelected = { type ->
-                        timelinePreviewController.setEngineType(type)
-                        editorViewModel.updateSelectedEngine(type)
-                        showSettingsMenu = false
-                    },
-                    onDismiss = { showSettingsMenu = false }
-                )
-            }
-        }
-        
-        if (com.example.BuildConfig.DEBUG && previewSettings.showDebugOverlay) {
-            DeveloperDebugPanel(
-                currentAsset = currentProjectAsset,
-                playheadFrame = playheadFrame,
-                engineType = engineType.displayName,
-                isProxySource = activeSourceIsProxy,
-                playerError = playerError,
-                playbackErrorCode = playbackFailure?.errorCodeName ?: playbackFailure?.errorCode?.toString(),
-                playbackFailureCategory = playbackFailure?.category?.name,
-                media3Metrics = media3Metrics.takeIf {
-                    engineType == com.example.timeline.engine.preview.PreviewEngineType.MEDIA3_FALLBACK
-                }
-            )
-        }
     }
 }

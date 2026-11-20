@@ -11,8 +11,10 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.dp
-import com.example.timeline.engine.native.NativeTimelineCore
-import com.example.timeline.engine.native.NativeTimelineMetrics
+import com.example.timeline.core.CoreV2EditCommand
+import com.example.timeline.core.CoreV2EditOutcome
+import com.example.timeline.core.TimelineCoreV2Adapter
+import com.example.timeline.core.TimelineProject
 import com.example.timeline.core.TrackType
 import kotlin.math.max
 import androidx.compose.ui.geometry.Offset
@@ -24,6 +26,14 @@ import androidx.compose.material.icons.filled.Add
 import kotlinx.coroutines.flow.StateFlow
 
 
+
+private fun actionClipId(action: TimelineDragAction): String? = when (action) {
+    is TimelineDragAction.MoveClip -> action.clip.id
+    is TimelineDragAction.TrimStart -> action.clip.id
+    is TimelineDragAction.TrimEnd -> action.clip.id
+    else -> null
+}
+
 @Composable
 fun CineTimelineCanvas(
     onImportClick: () -> Unit = {},
@@ -33,12 +43,11 @@ fun CineTimelineCanvas(
     modifier: Modifier = Modifier,
     onClipSelected: (String?) -> Unit,
     onPlayheadMoved: (Long) -> Unit,
-    onClipMoved: (String, Long) -> Unit,
-    onTrimStart: (String, Long) -> Unit,
-    onTrimEnd: (String, Long) -> Unit,
+    onNativeEditCommit: (List<CoreV2EditCommand>, String) -> Unit,
     onZoomChange: ((Float) -> Unit)? = null,
     onSplit: () -> Unit = {},
     onDelete: () -> Unit = {},
+    onSetGroupLocked: (String, Boolean) -> Unit = { _, _ -> },
     onRenameTrack: (String, String) -> Unit = { _, _ -> },
     onDeleteTrack: (String) -> Unit = {},
     onMoveTrack: (String, Int) -> Unit = { _, _ -> }
@@ -49,17 +58,58 @@ fun CineTimelineCanvas(
     var isDragging by remember { mutableStateOf(false) }
     
     var contextMenuVisible by remember { mutableStateOf(false) }
+    var contextMenuClipId by remember { mutableStateOf<String?>(null) }
     var contextMenuOffset by remember { mutableStateOf(IntOffset.Zero) }
     var dragAction by remember { mutableStateOf<TimelineDragAction>(TimelineDragAction.None) }
     var dragGhostStartFrame by remember { mutableStateOf<Long?>(null) }
     var dragGhostEndFrame by remember { mutableStateOf<Long?>(null) }
+    var dragPreviewProject by remember { mutableStateOf<TimelineProject?>(null) }
+    var dragPreviewCommands by remember { mutableStateOf<List<CoreV2EditCommand>?>(null) }
     var trackToRename by remember { mutableStateOf<com.example.timeline.core.TimelineTrack?>(null) }
     var renameText by remember { mutableStateOf("") }
     
     val pixelsPerFrame = uiState.pixelsPerFrame
     val trackHeight = 80f
     val trackPadding = 12f
-    
+    val contextMenuLockTarget = remember(uiState.project, contextMenuClipId) {
+        contextMenuClipId?.let { TimelineGroupLockController.targetFor(uiState.project, it) }
+    }
+
+    fun updateNativePreview(action: TimelineDragAction, targetFrame: Long) {
+        val commands = TimelineGestureController.previewCommands(
+            action = action,
+            targetFrame = targetFrame,
+            project = uiState.project
+        )
+        if (commands == null) {
+            dragPreviewProject = null
+            dragPreviewCommands = null
+            dragGhostStartFrame = null
+            dragGhostEndFrame = null
+            return
+        }
+        when (val preview = TimelineCoreV2Adapter.applyEdits(uiState.project, commands)) {
+            is CoreV2EditOutcome.Applied -> {
+                dragPreviewProject = preview.project
+                dragPreviewCommands = commands
+                val updated = preview.project.tracks.asSequence().flatMap { it.clips.asSequence() }
+                    .firstOrNull { it.id == actionClipId(action) }
+                when (action) {
+                    is TimelineDragAction.MoveClip,
+                    is TimelineDragAction.TrimStart -> dragGhostStartFrame = updated?.timelineStart
+                    is TimelineDragAction.TrimEnd -> dragGhostEndFrame = updated?.timelineEnd
+                    else -> Unit
+                }
+            }
+            is CoreV2EditOutcome.Rejected -> {
+                dragPreviewProject = null
+                dragPreviewCommands = null
+                dragGhostStartFrame = null
+                dragGhostEndFrame = null
+            }
+        }
+    }
+
     // Transformable state for pinch zoom and pan
     val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
         if (onZoomChange != null) {
@@ -78,9 +128,26 @@ fun CineTimelineCanvas(
     ) {
         val viewportWidth = constraints.maxWidth
         val centerX = viewportWidth / 2f
-        val contentHeightPx = with(androidx.compose.ui.platform.LocalDensity.current) { 40.dp.toPx() } +
-            uiState.project.tracks.size * (trackHeight + trackPadding)
+        val rulerHeightPx = with(androidx.compose.ui.platform.LocalDensity.current) { 40.dp.toPx() }
+        val renderProject = dragPreviewProject ?: uiState.project
+        val contentHeightPx = rulerHeightPx +
+            renderProject.tracks.size * (trackHeight + trackPadding)
         val maxScrollY = max(0f, contentHeightPx - constraints.maxHeight.toFloat())
+        val visibleTimelineClips = remember(
+            renderProject.tracks, scrollX, scrollY, pixelsPerFrame, constraints.maxWidth, constraints.maxHeight, rulerHeightPx
+        ) {
+            TimelineVirtualization.visibleClips(
+                project = renderProject,
+                scrollX = scrollX,
+                scrollY = scrollY,
+                viewportWidthPx = viewportWidth.toFloat(),
+                viewportHeightPx = constraints.maxHeight.toFloat(),
+                pixelsPerFrame = pixelsPerFrame,
+                trackHeightPx = trackHeight,
+                trackPaddingPx = trackPadding,
+                rulerHeightPx = rulerHeightPx
+            )
+        }
         SideEffect {
             if (maxVerticalScroll != maxScrollY) maxVerticalScroll = maxScrollY
             val boundedScrollY = scrollY.coerceIn(0f, maxScrollY)
@@ -97,7 +164,7 @@ fun CineTimelineCanvas(
             isFollowing = isFollowing,
             isDragging = isDragging,
             transformableState = transformableState,
-            frameToX = NativeTimelineCore::frameToX,
+            frameToX = TimelineUiGeometry::frameToX,
             onScrollTo = { scrollX = it }
         )
         
@@ -142,19 +209,21 @@ fun CineTimelineCanvas(
                                 val hitClip = TimelineGestureController.hitTest(tapX, tapY, uiState.project, pixelsPerFrame)
                                 if (hitClip != null) {
                                     onClipSelected(hitClip.id)
+                                    contextMenuClipId = hitClip.id
                                     contextMenuOffset = IntOffset(offset.x.toInt(), offset.y.toInt())
                                     contextMenuVisible = true
                                 }
                             },
                             onTap = { offset ->
                                 contextMenuVisible = false
+                                contextMenuClipId = null
                                 val tapX = offset.x + scrollX
                                 val tapY = offset.y + scrollY - 40.dp.toPx()
                                 val hitClip = TimelineGestureController.hitTest(tapX, tapY, uiState.project, pixelsPerFrame)
                                 onClipSelected(hitClip?.id)
                                 
                                 if (hitClip == null) {
-                                    val frame = NativeTimelineCore.xToFrame(tapX, pixelsPerFrame)
+                                    val frame = TimelineUiGeometry.xToFrame(tapX, pixelsPerFrame)
                                     onPlayheadMoved(max(0, frame))
                                 }
                             }
@@ -165,6 +234,9 @@ fun CineTimelineCanvas(
                             onDragStart = { offset ->
                                 isDragging = true
                                 contextMenuVisible = false
+                                contextMenuClipId = null
+                                dragPreviewProject = null
+                                dragPreviewCommands = null
                                 dragAction = TimelineGestureController.determineDragAction(
                                     startOffset = offset,
                                     scrollX = scrollX,
@@ -183,59 +255,105 @@ fun CineTimelineCanvas(
                             },
                             onDrag = { change, dragAmount ->
                                 change.consume()
-                                when (val action = dragAction) {
+                                if (!TimelineCoreV2Adapter.isAvailable() &&
+                                    (dragAction is TimelineDragAction.MoveClip ||
+                                        dragAction is TimelineDragAction.TrimStart ||
+                                        dragAction is TimelineDragAction.TrimEnd)
+                                ) {
+                                    dragAction = TimelineDragAction.None
+                                    dragPreviewProject = null
+                                    dragPreviewCommands = null
+                                    dragGhostStartFrame = null
+                                    dragGhostEndFrame = null
+                                } else when (val action = dragAction) {
                                     is TimelineDragAction.Pan -> {
                                         scrollX = max(0f, scrollX - dragAmount.x)
                                         scrollY = (scrollY - dragAmount.y).coerceIn(0f, maxVerticalScroll)
                                     }
                                     is TimelineDragAction.ScrubPlayhead -> {
-                                        val frame = NativeTimelineCore.xToFrame(change.position.x + scrollX, pixelsPerFrame)
+                                        val frame = TimelineUiGeometry.xToFrame(change.position.x + scrollX, pixelsPerFrame)
                                         onPlayheadMoved(max(0, frame))
                                     }
                                     is TimelineDragAction.MoveClip -> {
                                         val currentX = change.position.x + scrollX
-                                        val frame = NativeTimelineCore.xToFrame(currentX, pixelsPerFrame)
+                                        val frame = TimelineUiGeometry.xToFrame(currentX, pixelsPerFrame)
                                         val rawStart = max(0L, frame - action.startOffsetFrames)
-                                        dragGhostStartFrame = TimelineGestureController.snapFrame(rawStart, uiState.project, playheadFrameFlow.value, pixelsPerFrame, action.clip.id)
+                                        val snapped = if (uiState.snapSettings.isSnappingEnabled) {
+                                            TimelineGestureController.snapFrame(
+                                                rawStart, uiState.project, playheadFrameFlow.value, pixelsPerFrame,
+                                                action.clip.id, uiState.snapSettings
+                                            )
+                                        } else rawStart
+                                        if (snapped == null) {
+                                            dragAction = TimelineDragAction.None
+                                            dragPreviewProject = null
+                                            dragPreviewCommands = null
+                                            dragGhostStartFrame = null
+                                        } else {
+                                            updateNativePreview(action, snapped)
+                                        }
                                     }
                                     is TimelineDragAction.TrimStart -> {
                                         val currentX = change.position.x + scrollX
-                                        val frame = NativeTimelineCore.xToFrame(currentX, pixelsPerFrame)
-                                        val snapped = TimelineGestureController.snapFrame(max(0L, frame), uiState.project, playheadFrameFlow.value, pixelsPerFrame, action.clip.id)
-                                        // prevent trimming past end
-                                        dragGhostStartFrame = minOf(snapped, action.clip.timelineEnd - 1)
+                                        val frame = TimelineUiGeometry.xToFrame(currentX, pixelsPerFrame)
+                                        val snapped = if (uiState.snapSettings.isSnappingEnabled) {
+                                            TimelineGestureController.snapFrame(
+                                                max(0L, frame), uiState.project, playheadFrameFlow.value, pixelsPerFrame,
+                                                action.clip.id, uiState.snapSettings
+                                            )
+                                        } else max(0L, frame)
+                                        if (snapped == null) {
+                                            dragAction = TimelineDragAction.None
+                                            dragPreviewProject = null
+                                            dragPreviewCommands = null
+                                            dragGhostStartFrame = null
+                                        } else {
+                                            updateNativePreview(action, snapped)
+                                        }
                                     }
                                     is TimelineDragAction.TrimEnd -> {
                                         val currentX = change.position.x + scrollX
-                                        val frame = NativeTimelineCore.xToFrame(currentX, pixelsPerFrame)
-                                        val snapped = TimelineGestureController.snapFrame(max(0L, frame), uiState.project, playheadFrameFlow.value, pixelsPerFrame, action.clip.id)
-                                        // prevent trimming past start
-                                        dragGhostEndFrame = maxOf(snapped, action.clip.timelineStart + 1)
+                                        val frame = TimelineUiGeometry.xToFrame(currentX, pixelsPerFrame)
+                                        val snapped = if (uiState.snapSettings.isSnappingEnabled) {
+                                            TimelineGestureController.snapFrame(
+                                                max(0L, frame), uiState.project, playheadFrameFlow.value, pixelsPerFrame,
+                                                action.clip.id, uiState.snapSettings
+                                            )
+                                        } else max(0L, frame)
+                                        if (snapped == null) {
+                                            dragAction = TimelineDragAction.None
+                                            dragPreviewProject = null
+                                            dragPreviewCommands = null
+                                            dragGhostEndFrame = null
+                                        } else {
+                                            updateNativePreview(action, snapped)
+                                        }
                                     }
                                     TimelineDragAction.None -> {}
                                 }
                             },
-                            onDragEnd = { 
+                            onDragEnd = {
                                 isDragging = false
-                                when (val action = dragAction) {
-                                    is TimelineDragAction.MoveClip -> {
-                                        dragGhostStartFrame?.let { onClipMoved(action.clip.id, it) }
-                                    }
-                                    is TimelineDragAction.TrimStart -> {
-                                        dragGhostStartFrame?.let { onTrimStart(action.clip.id, it) }
-                                    }
-                                    is TimelineDragAction.TrimEnd -> {
-                                        dragGhostEndFrame?.let { onTrimEnd(action.clip.id, it) }
-                                    }
-                                    else -> {}
+                                val commands = dragPreviewCommands
+                                if (TimelineCoreV2Adapter.isAvailable() && commands != null) {
+                                    onNativeEditCommit(commands, when (dragAction) {
+                                        is TimelineDragAction.MoveClip -> "Move Clip"
+                                        is TimelineDragAction.TrimStart -> "Trim Start"
+                                        is TimelineDragAction.TrimEnd -> "Trim End"
+                                        else -> "Timeline Edit"
+                                    })
                                 }
                                 dragAction = TimelineDragAction.None
+                                dragPreviewProject = null
+                                dragPreviewCommands = null
                                 dragGhostStartFrame = null
                                 dragGhostEndFrame = null
                             },
-                            onDragCancel = { 
+                            onDragCancel = {
                                 isDragging = false
                                 dragAction = TimelineDragAction.None
+                                dragPreviewProject = null
+                                dragPreviewCommands = null
                                 dragGhostStartFrame = null
                                 dragGhostEndFrame = null
                             }
@@ -254,27 +372,12 @@ fun CineTimelineCanvas(
                     // Layout Clips
                     Layout(
                         content = {
-                            val startTime = System.currentTimeMillis()
-                            uiState.project.tracks.forEach { track ->
-                                track.clips.forEach { clip ->
-                                    val isMoving = dragAction is TimelineDragAction.MoveClip && clip.id == (dragAction as TimelineDragAction.MoveClip).clip.id
-                                    val isTrimmingStart = dragAction is TimelineDragAction.TrimStart && clip.id == (dragAction as TimelineDragAction.TrimStart).clip.id
-                                    val isTrimmingEnd = dragAction is TimelineDragAction.TrimEnd && clip.id == (dragAction as TimelineDragAction.TrimEnd).clip.id
-                                    
-                                    val effectiveStart = if (isMoving || isTrimmingStart) dragGhostStartFrame ?: clip.timelineStart else clip.timelineStart
-                                    val effectiveEnd = if (isTrimmingEnd) dragGhostEndFrame ?: clip.timelineEnd
-                                                      else if (isMoving) effectiveStart + (clip.timelineEnd - clip.timelineStart)
-                                                      else clip.timelineEnd
-                                    
-                                    val startDiff = effectiveStart - clip.timelineStart
-                                    val endDiff = effectiveEnd - clip.timelineEnd
-                                    val effectiveSourceIn = clip.sourceIn + if (isTrimmingStart) startDiff else 0L
-                                    val effectiveSourceOut = clip.sourceOut + if (isTrimmingEnd) endDiff else 0L
-                                    val effectiveClip = clip.copy(timelineStart = effectiveStart, sourceIn = effectiveSourceIn, sourceOut = effectiveSourceOut)
-                                    val mediaAsset = uiState.project.mediaAssets.find { it.assetId == clip.mediaId }
-                                    
-                                    FilmStripClipView(
-                                        clip = effectiveClip,
+                            visibleTimelineClips.forEach { visible ->
+                                val clip = visible.clip
+                                val mediaAsset = uiState.project.mediaAssets.find { it.assetId == clip.mediaId }
+
+                                FilmStripClipView(
+                                        clip = clip,
                                         mediaAsset = mediaAsset,
                                         isSelected = uiState.selectedClipId == clip.id,
                                         pixelsPerFrame = pixelsPerFrame,
@@ -282,70 +385,22 @@ fun CineTimelineCanvas(
                                         viewportWidth = viewportWidth.toFloat(),
                                         modifier = Modifier
                                     )
-                                }
                             }
-                            NativeTimelineMetrics.reportLayoutTime(System.currentTimeMillis() - startTime)
                         }
                     ) { measurables, constraints ->
+                        val layoutStartedAt = System.nanoTime()
                         val placeables = measurables.map { it.measure(constraints) }
                         
                         layout(constraints.maxWidth, constraints.maxHeight) {
-                            var mIndex = 0
-                            
-                            if (NativeTimelineCore.isAvailable()) {
-                                val inputData = mutableListOf<Long>()
-                                uiState.project.tracks.forEachIndexed { trackIndex, track ->
-                                    track.clips.forEach { clip ->
-                                        val isMoving = dragAction is TimelineDragAction.MoveClip && clip.id == (dragAction as TimelineDragAction.MoveClip).clip.id
-                                        val isTrimmingStart = dragAction is TimelineDragAction.TrimStart && clip.id == (dragAction as TimelineDragAction.TrimStart).clip.id
-                                        val isTrimmingEnd = dragAction is TimelineDragAction.TrimEnd && clip.id == (dragAction as TimelineDragAction.TrimEnd).clip.id
-                                        
-                                        val effectiveStart = if (isMoving || isTrimmingStart) dragGhostStartFrame ?: clip.timelineStart else clip.timelineStart
-                                        val effectiveEnd = if (isTrimmingEnd) dragGhostEndFrame ?: clip.timelineEnd
-                                                          else if (isMoving) effectiveStart + (clip.timelineEnd - clip.timelineStart)
-                                                          else clip.timelineEnd
-                                        
-                                        inputData.addAll(listOf(trackIndex.toLong(), effectiveStart, (effectiveEnd - effectiveStart)))
-                                    }
-                                }
-                                
-                                val startNs = System.nanoTime()
-                                val layoutData = NativeTimelineCore.nativeLayoutClips(
-                                    inputData.toLongArray(),
-                                    trackHeight, trackPadding, 40.dp.toPx(),
-                                    pixelsPerFrame, scrollX
-                                )
-                                val elapsedMs = (System.nanoTime() - startNs) / 1_000_000
-                                NativeTimelineMetrics.reportLayoutTime(elapsedMs)
-                                
-                                var i = 0
-                                uiState.project.tracks.forEachIndexed { trackIndex, track ->
-                                    track.clips.forEach { clip ->
-                                        if (mIndex < placeables.size && i + 4 < layoutData.size) {
-                                            val left = layoutData[i + 1].toInt()
-                                            val top = layoutData[i + 2].toInt()
-                                            placeables[mIndex].placeRelative(x = left, y = top)
-                                            mIndex++
-                                        }
-                                        i += 5
-                                    }
-                                }
-                            } else {
-                                uiState.project.tracks.forEachIndexed { trackIndex, track ->
-                                    track.clips.forEach { clip ->
-                                        if (mIndex < placeables.size) {
-                                            val isMoving = dragAction is TimelineDragAction.MoveClip && clip.id == (dragAction as TimelineDragAction.MoveClip).clip.id
-                                            val isTrimmingStart = dragAction is TimelineDragAction.TrimStart && clip.id == (dragAction as TimelineDragAction.TrimStart).clip.id
-                                            val effectiveStart = if (isMoving || isTrimmingStart) dragGhostStartFrame ?: clip.timelineStart else clip.timelineStart
-                                            
-                                            val left = (NativeTimelineCore.frameToX(effectiveStart, pixelsPerFrame) - scrollX).toInt()
-                                            val top = (trackIndex * (trackHeight + trackPadding) + 40.dp.toPx()).toInt()
-                                            placeables[mIndex].placeRelative(x = left, y = top)
-                                            mIndex++
-                                        }
-                                    }
+                            visibleTimelineClips.forEachIndexed { index, visible ->
+                                if (index < placeables.size) {
+                                    val clip = visible.clip
+                                    val left = (TimelineUiGeometry.frameToX(clip.timelineStart, pixelsPerFrame) - scrollX).toInt()
+                                    val top = (visible.trackIndex * (trackHeight + trackPadding) + rulerHeightPx).toInt()
+                                    placeables[index].placeRelative(x = left, y = top)
                                 }
                             }
+                            TimelineUiMetrics.reportLayoutTime((System.nanoTime() - layoutStartedAt) / 1_000_000L)
                         }
                     }
                 }
@@ -354,9 +409,20 @@ fun CineTimelineCanvas(
                 Box(modifier = Modifier.offset { contextMenuOffset }) {
                     TimelineContextMenu(
                         expanded = contextMenuVisible,
-                        onDismissRequest = { contextMenuVisible = false },
+                        onDismissRequest = {
+                            contextMenuVisible = false
+                            contextMenuClipId = null
+                        },
                         onSplit = onSplit,
-                        onDelete = onDelete
+                        onDelete = onDelete,
+                        showGroupLock = contextMenuLockTarget != null,
+                        groupLockLabel = contextMenuLockTarget?.actionLabel ?: "Lock Clip",
+                        groupLockActionEnabled = TimelineCoreV2Adapter.isAvailable(),
+                        onToggleGroupLock = {
+                            contextMenuLockTarget?.let { target ->
+                                onSetGroupLocked(target.clipId, !target.isLocked)
+                            }
+                        }
                     )
                 }
                 
@@ -370,7 +436,7 @@ fun CineTimelineCanvas(
                     playheadFrameFlow = playheadFrameFlow,
                     pixelsPerFrame = pixelsPerFrame,
                     scrollX = scrollX,
-                    frameToX = NativeTimelineCore::frameToX
+                    frameToX = TimelineUiGeometry::frameToX
                 )
             }
         }

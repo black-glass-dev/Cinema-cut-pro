@@ -1,0 +1,131 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 31,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "host-debug",
+      "displayName": "Timeline Core v2 host debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/cmake/host-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "TL_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "host-asan",
+      "displayName": "Timeline Core v2 host ASan/UBSan",
+      "inherits": "host-debug",
+      "binaryDir": "${sourceDir}/build/cmake/host-asan",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+      }
+    },
+    {
+      "name": "host-release",
+      "displayName": "Timeline Core v2 host release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/cmake/host-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "TL_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "host-coverage",
+      "displayName": "Timeline Core v2 host line/branch coverage",
+      "inherits": "host-debug",
+      "binaryDir": "${sourceDir}/build/cmake/host-coverage",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "--coverage -fprofile-arcs -ftest-coverage",
+        "CMAKE_EXE_LINKER_FLAGS": "--coverage",
+        "TL_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "host-benchmark",
+      "displayName": "Timeline Core v2 host benchmarks (not device evidence)",
+      "inherits": "host-release",
+      "binaryDir": "${sourceDir}/build/cmake/host-benchmark",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "TL_BUILD_TESTS": "OFF",
+        "TL_BUILD_BENCHMARKS": "ON"
+      }
+    },
+    {
+      "name": "android-arm64",
+      "displayName": "Timeline Core v2 Android arm64 (NDK required)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/cmake/android-arm64",
+      "toolchainFile": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ANDROID_ABI": "arm64-v8a",
+        "ANDROID_PLATFORM": "android-24",
+        "TL_BUILD_TESTS": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "host-debug",
+      "configurePreset": "host-debug"
+    },
+    {
+      "name": "host-asan",
+      "configurePreset": "host-asan"
+    },
+    {
+      "name": "host-release",
+      "configurePreset": "host-release"
+    },
+    {
+      "name": "host-coverage",
+      "configurePreset": "host-coverage"
+    },
+    {
+      "name": "host-benchmark",
+      "configurePreset": "host-benchmark"
+    },
+    {
+      "name": "android-arm64",
+      "configurePreset": "android-arm64"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "host-debug",
+      "configurePreset": "host-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "host-asan",
+      "configurePreset": "host-asan",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "host-coverage",
+      "configurePreset": "host-coverage",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "host-release",
+      "configurePreset": "host-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

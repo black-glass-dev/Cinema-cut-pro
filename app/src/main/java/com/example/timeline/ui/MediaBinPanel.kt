@@ -34,10 +34,6 @@ fun MediaBinPanel(
     mediaAssets: List<MediaAsset>,
     proxyProgressMap: Map<String, Float>,
     onImportVideoClick: () -> Unit,
-    onImportAudioClick: () -> Unit,
-    onImportImageClick: () -> Unit,
-    onImportImageSequenceClick: () -> Unit,
-    onImportAnyClick: () -> Unit,
     onAssetClick: (MediaAsset) -> Unit,
     onAssetOptionClick: ((MediaAsset, String) -> Unit)? = null,
     onRetryImport: (String) -> Unit,
@@ -46,8 +42,6 @@ fun MediaBinPanel(
     onRelinkRequest: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var isMenuExpanded by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -61,19 +55,12 @@ fun MediaBinPanel(
         ) {
             Text("Project Media", style = MaterialTheme.typography.titleMedium)
             
-            Box {
-                Button(onClick = { isMenuExpanded = true }, modifier = Modifier.height(36.dp), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)) {
-                    Text("Import...")
-                }
-                ImportMenu(
-                    expanded = isMenuExpanded,
-                    onDismissRequest = { isMenuExpanded = false },
-                    onImportVideo = onImportVideoClick,
-                    onImportAudio = onImportAudioClick,
-                    onImportImage = onImportImageClick,
-                    onImportImageSequence = onImportImageSequenceClick,
-                    onImportAny = onImportAnyClick
-                )
+            Button(
+                onClick = onImportVideoClick,
+                modifier = Modifier.height(36.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+            ) {
+                Text("Import video")
             }
         }
         Spacer(modifier = Modifier.height(8.dp))
@@ -280,13 +267,17 @@ fun MediaAssetItem(
                 }
 
                 Column {
-                    val fps = asset.metadata.estimatedFrameRate?.fpsAsFloat ?: 30f
+                    val fpsLabel = asset.metadata.exactFrameRate?.let { rate ->
+                        "${rate.numerator}/${rate.denominator}fps"
+                    } ?: asset.metadata.estimatedFrameRate?.let { rate ->
+                        "${rate.numerator}/${rate.denominator}fps (estimated)"
+                    } ?: "fps unknown"
                     val w = asset.metadata.width
                     val h = asset.metadata.height
                     val codec = asset.metadata.videoStreams.firstOrNull()?.codecName ?: asset.metadata.audioStreams.firstOrNull()?.codecMime ?: "Unknown"
 
                     Text(
-                        text = "${w}x${h} ${String.format("%.2f", fps)}fps",
+                        text = "${w}x${h} $fpsLabel",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

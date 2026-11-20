@@ -1,0 +1,156 @@
+Timeline Core v2 gate: 20261111T135732Z
+Branch: arena/a2d6ebb0-cinema-cut-pro
+Compiler: c++ (Debian 12.2.0-14+deb12u1) 12.2.0
+
+== Native export regression suite: python3 tools/run_native_export_tests.py
+Native export engine tests passed.
+mcraw preview renderer test passed
+DecoderTest passed
+DecoderGyroTest passed
+DecoderAccelerometerTest passed
+
+== Timeline Core v2 direct C++23 tests: ./tools/run_timeline_core_tests.sh
+Timeline Core v2 tests passed: 92976 assertions; 10,000 snap-oracle cases and 10,000 undo/redo cycles.
+
+== C++23 conformance probe: ./tools/probe_cxx_conformance.sh
+Generated /home/user/Cinema-cut-pro/build/generated/cxx_features.hpp using c++ -std=c++23
+#pragma once
+#define TL_CXX2C_FLAG_AVAILABLE 0
+#define TL_CXX_FEATURE_PROBE_CPLUSPLUS 202100L
+#define TL_HAVE_STD_EXPECTED 1
+#define TL_HAVE_STD_MDSPAN 0
+#define TL_HAVE_STD_FORMAT 0
+#define TL_HAVE_STD_GENERATOR 0
+#define TL_HAVE_STD_FLAT_MAP 0
+#define TL_HAVE_STD_INPLACE_VECTOR 0
+#define TL_HAVE_STD_SIMD 0
+
+== CMake host-debug configure: cmake --preset host-debug
+Preset CMake variables:
+
+  CMAKE_BUILD_TYPE="Debug"
+  TL_BUILD_TESTS="ON"
+
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/user/Cinema-cut-pro/build/cmake/host-debug
+
+== CMake host-debug build: cmake --build --preset host-debug
+ninja: no work to do.
+
+== CMake host-debug CTest: ctest --preset host-debug --no-tests=error
+Test project /home/user/Cinema-cut-pro/build/cmake/host-debug
+    Start 1: timeline_core_v2_tests
+1/1 Test #1: timeline_core_v2_tests ...........   Passed    0.19 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.19 sec
+
+== CMake host-release configure: cmake --preset host-release
+Preset CMake variables:
+
+  CMAKE_BUILD_TYPE="Release"
+  TL_BUILD_TESTS="ON"
+
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/user/Cinema-cut-pro/build/cmake/host-release
+
+== CMake host-release build: cmake --build --preset host-release
+ninja: no work to do.
+
+== CMake host-release CTest: ctest --preset host-release --no-tests=error
+Test project /home/user/Cinema-cut-pro/build/cmake/host-release
+    Start 1: timeline_core_v2_tests
+1/1 Test #1: timeline_core_v2_tests ...........   Passed    0.02 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.02 sec
+
+== CMake host-asan configure: cmake --preset host-asan
+Preset CMake variables:
+
+  CMAKE_BUILD_TYPE="Debug"
+  CMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+  CMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+  TL_BUILD_TESTS="ON"
+
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/user/Cinema-cut-pro/build/cmake/host-asan
+
+== CMake host-asan build: cmake --build --preset host-asan
+ninja: no work to do.
+
+== CMake host-asan CTest: ctest --preset host-asan --no-tests=error
+Test project /home/user/Cinema-cut-pro/build/cmake/host-asan
+    Start 1: timeline_core_v2_tests
+1/1 Test #1: timeline_core_v2_tests ...........   Passed    0.39 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.39 sec
+
+== CMake host-coverage configure: cmake --preset host-coverage
+Preset CMake variables:
+
+  CMAKE_BUILD_TYPE="Debug"
+  CMAKE_CXX_FLAGS="--coverage -fprofile-arcs -ftest-coverage"
+  CMAKE_EXE_LINKER_FLAGS="--coverage"
+  TL_BUILD_TESTS="ON"
+
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/user/Cinema-cut-pro/build/cmake/host-coverage
+
+== CMake host-coverage build: cmake --build --preset host-coverage
+ninja: no work to do.
+
+== CMake host-coverage CTest: ctest --preset host-coverage --no-tests=error
+Test project /home/user/Cinema-cut-pro/build/cmake/host-coverage
+    Start 1: timeline_core_v2_tests
+1/1 Test #1: timeline_core_v2_tests ...........   Passed    0.20 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.20 sec
+
+== Timeline Core line/branch coverage gate: python3 tools/check_timeline_core_coverage.py
+File '/home/user/Cinema-cut-pro/app/src/main/cpp/timeline_core_v2/src/timeline_core.cpp'
+Lines executed:81.85% of 1008
+Branches executed:96.39% of 1054
+Taken at least once:63.57% of 1054
+Timeline Core v2 coverage: lines 81.85%/80.00% minimum (1008 executable); branches taken 63.57%/60.00% minimum (1054 branches)
+
+== CMake host-benchmark configure: cmake --preset host-benchmark
+Preset CMake variables:
+
+  CMAKE_BUILD_TYPE="Release"
+  TL_BUILD_BENCHMARKS="ON"
+  TL_BUILD_TESTS="OFF"
+
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/user/Cinema-cut-pro/build/cmake/host-benchmark
+
+== CMake host-benchmark build: cmake --build --preset host-benchmark --target timeline_core_v2_benchmark
+ninja: no work to do.
+
+== Host-only Timeline Core microbenchmark: build/cmake/host-benchmark/app/src/main/cpp/timeline_core_v2/timeline_core_v2_benchmark
+validate clips=500 tracks=20 iterations=30 p50_us=9.324 p95_us=10.152
+visible_query clips=500 tracks=20 iterations=30 p50_us=11.291 p95_us=13.347
+snap clips=500 tracks=20 iterations=30 p50_us=13.694 p95_us=14.435
+apply_move clips=500 tracks=20 iterations=30 p50_us=62.064 p95_us=76.666
+validate clips=10000 tracks=20 iterations=30 p50_us=281.152 p95_us=382.238
+visible_query clips=10000 tracks=20 iterations=30 p50_us=264.381 p95_us=313.651
+snap clips=10000 tracks=20 iterations=30 p50_us=331.746 p95_us=390.284
+apply_move clips=10000 tracks=20 iterations=30 p50_us=1635.62 p95_us=1689.28
+host benchmark sink=6366843792371631804
+
+== Whitespace/error check: git diff --check
+
+BLOCKED: Java/JDK absent; Android Gradle tests and :app:assembleDebug cannot start.
+
+GATE BLOCKED/FAILED (exit 2)

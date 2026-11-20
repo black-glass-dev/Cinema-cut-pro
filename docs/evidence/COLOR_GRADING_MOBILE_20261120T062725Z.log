@@ -1,0 +1,13 @@
+Color grading Android/device gate: 20261120T062725Z
+Branch: arena/a2d6ebb0-cinema-cut-pro
+Evidence: docs/evidence/COLOR_GRADING_MOBILE_20261120T062725Z.log
+MISSING java
+MISSING javac
+MISSING adb
+MISSING Android SDK: set ANDROID_SDK_ROOT or ANDROID_HOME to an installed SDK.
+
+BLOCKED: mobile build/install gate did not start.
+ - java is not installed or not on PATH
+ - javac is not installed or not on PATH
+ - adb is not installed or not on PATH
+ - Android SDK root is unavailable

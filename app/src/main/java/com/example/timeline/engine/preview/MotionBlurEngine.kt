@@ -7,7 +7,7 @@ object MotionBlurEngine {
     
     init {
         try {
-            System.loadLibrary("timeline_engine")
+            System.loadLibrary("transform_engine")
         } catch (e: UnsatisfiedLinkError) {
             // Error loading native library
         }

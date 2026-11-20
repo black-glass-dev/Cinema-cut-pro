@@ -1,6 +1,7 @@
 package com.example.timeline.export.backend
 
 import android.content.Context
+import com.example.timeline.core.TimelineFrameMath
 import com.example.timeline.core.TimelineProject
 import com.example.timeline.export.model.*
 import com.example.timeline.export.pipeline.VideoExportPipeline
@@ -17,29 +18,32 @@ class MediaCodecExportBackend(private val context: Context) : ExportBackend {
     private val cancellationTokens = mutableMapOf<String, ExportCancellationToken>()
     private var projectRef: TimelineProject? = null
     
-    override fun getCapabilities(): ExportBackendCapability {
-        return ExportBackendCapability(
-            backendAvailable = true,
-            hardwareAccelerated = true,
-            supportedCodecs = listOf(ExportCodec.H264, ExportCodec.H265, ExportCodec.AV1),
-            supportedContainers = listOf(ExportContainer.MP4, ExportContainer.MKV), // MediaMuxer supports limited MP4/WebM usually. Assuming MKV might be partial.
-            maxResolutionWidth = 3840,
-            maxResolutionHeight = 2160,
-            maxFps = 120f,
-            supportsHDR = true,
-            supportsAlpha = false,
-            supportsAudioMix = true,
-            supportsVideoComposition = true,
-            supportsProRes = false,
-            supportsAV1 = true,
-            supports10Bit = true,
-            supportsBatch = true,
-            supportsCancel = true
-        )
-    }
+    /** This experimental pipeline is not registered because it has not passed end-to-end mux/export validation. */
+    override fun getCapabilities(): ExportBackendCapability = ExportBackendCapability(
+        backendAvailable = false,
+        hardwareAccelerated = false,
+        supportedCodecs = emptyList(),
+        supportedContainers = emptyList(),
+        maxResolutionWidth = 0,
+        maxResolutionHeight = 0,
+        maxFps = 0f,
+        supportsHDR = false,
+        supportsAlpha = false,
+        supportsAudioMix = false,
+        supportsVideoComposition = false,
+        supportsProRes = false,
+        supportsAV1 = false,
+        supports10Bit = false,
+        supportsBatch = false,
+        supportsCancel = false
+    )
     
     override fun validate(settings: ExportSettings, project: TimelineProject): ExportValidationResult {
         projectRef = project
+        if (!getCapabilities().backendAvailable) {
+            val message = "The experimental MediaCodec pipeline is not a validated production export backend."
+            return ExportValidationResult(false, listOf(message), errorMessage = message)
+        }
         val errors = mutableListOf<String>()
         val warnings = mutableListOf<String>()
         val cap = getCapabilities()
@@ -59,11 +63,14 @@ class MediaCodecExportBackend(private val context: Context) : ExportBackend {
         )
     }
     
-    override suspend fun prepare(job: ExportJob): Boolean {
-        return true
-    }
+    override suspend fun prepare(job: ExportJob): Boolean = false
     
     override suspend fun render(job: ExportJob, onProgress: (ExportProgress) -> Unit) {
+        if (!getCapabilities().backendAvailable) {
+            val message = "The experimental MediaCodec pipeline is not a validated production export backend."
+            onProgress(ExportProgress(job.jobId, ExportJobStatus.FAILED, 0f, 0, 0, 0, 0, message, message))
+            return
+        }
         val proj = projectRef ?: run {
             onProgress(ExportProgress(job.jobId, ExportJobStatus.FAILED, 0f, 0, 0, 0, 0, "Project reference not set"))
             return
@@ -79,10 +86,32 @@ class MediaCodecExportBackend(private val context: Context) : ExportBackend {
             java.io.File(context.cacheDir, "export_${System.currentTimeMillis()}.mp4")
         }
         
-        // Let ProgressTracker calculate it based on clips
-        val maxTimelineEnd = proj.tracks.flatMap { it.clips }.maxOfOrNull { it.timelineEnd } ?: 1L
-        val maxDurationUs = (maxTimelineEnd / proj.settings.getFpsRational().toFloat()) * 1_000_000
-        val totalFrames = (maxDurationUs / 1000000.0 * job.settings.frameRate.floatValue).toLong().coerceAtLeast(1L)
+        val maxTimelineEnd = proj.tracks.flatMap { it.clips }.maxOfOrNull { it.timelineEnd } ?: 0L
+        val projectRate = proj.settings.getFpsRational()
+        val maxDurationUs = TimelineFrameMath.microsecondsFromFrames(maxTimelineEnd, projectRate)
+        if (maxDurationUs == null) {
+            val message = "Project duration cannot be represented safely in microseconds."
+            onProgress(ExportProgress(job.jobId, ExportJobStatus.FAILED, 0f, 0, 0, 0, 0, message, message))
+            cancellationTokens.remove(job.jobId)
+            return
+        }
+        val totalFrames = TimelineFrameMath.convertFrameCountCeiling(
+            frameCount = maxTimelineEnd,
+            sourceNumerator = projectRate.numerator,
+            sourceDenominator = projectRate.denominator,
+            targetNumerator = job.settings.frameRate.numerator,
+            targetDenominator = job.settings.frameRate.denominator
+        )
+        if (totalFrames == null || totalFrames == 0L) {
+            val message = if (totalFrames == 0L) {
+                "The project contains no timeline frames to export."
+            } else {
+                "Export frame count cannot be represented safely."
+            }
+            onProgress(ExportProgress(job.jobId, ExportJobStatus.FAILED, 0f, 0, 0, 0, 0, message, message))
+            cancellationTokens.remove(job.jobId)
+            return
+        }
         
         val progressTracker = ExportProgressTracker(job.jobId, totalFrames) { progress ->
             onProgress(progress)

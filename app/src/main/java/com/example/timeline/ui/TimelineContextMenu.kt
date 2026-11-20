@@ -23,7 +23,11 @@ fun TimelineContextMenu(
     onSplit: () -> Unit,
     onDelete: () -> Unit,
     onTrimStartToPlayhead: () -> Unit = {},
-    onTrimEndToPlayhead: () -> Unit = {}
+    onTrimEndToPlayhead: () -> Unit = {},
+    showGroupLock: Boolean = false,
+    groupLockLabel: String = "Lock Clip",
+    groupLockActionEnabled: Boolean = true,
+    onToggleGroupLock: () -> Unit = {}
 ) {
     DropdownMenu(
         expanded = expanded,
@@ -53,6 +57,16 @@ fun TimelineContextMenu(
                 onDismissRequest()
             }
         )
+        if (showGroupLock) {
+            DropdownMenuItem(
+                enabled = groupLockActionEnabled,
+                text = { Text(groupLockLabel, color = Color.White) },
+                onClick = {
+                    onToggleGroupLock()
+                    onDismissRequest()
+                }
+            )
+        }
         DropdownMenuItem(
             text = { Text("Delete Clip", color = Color(0xFFFF5252)) },
             onClick = {

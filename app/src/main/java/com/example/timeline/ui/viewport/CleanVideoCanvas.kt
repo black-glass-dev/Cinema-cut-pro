@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import com.example.timeline.core.TimelineClip
 import com.example.timeline.core.TimelineProject
 import com.example.timeline.core.transform.ClipTransform
+import com.example.timeline.engine.preview.TimelineFrameResolver
 import com.example.timeline.engine.preview.TimelinePreviewController
 import com.example.timeline.media.MediaAsset
 import com.example.timeline.media.MediaAvailabilityStatus
@@ -44,13 +45,7 @@ fun CleanVideoCanvas(
     }
     val playbackFailure by failureFlow.collectAsState()
     val isVideoEffectFailure = playbackFailure?.isVideoEffectFailure == true
-    var activeOverlayMode by remember { mutableStateOf("BoundingBox") }
-    var liveTransformOverride by remember { mutableStateOf<ClipTransform?>(null) }
-    val effectiveTransform = liveTransformOverride ?: currentClip?.transform ?: ClipTransform()
-
-    LaunchedEffect(currentClip) {
-        liveTransformOverride = null
-    }
+    val effectiveTransform = currentClip?.transform ?: ClipTransform()
 
     val aspectRatioFloat = project.settings.resolutionWidth.toFloat() / project.settings.resolutionHeight.toFloat()
     val projectBgColor = try {
@@ -118,18 +113,27 @@ fun CleanVideoCanvas(
                         modifier = Modifier.fillMaxSize()
                     )
                 } else if (needsStillFrame) {
-                    val sourceFrame = playheadFrame - currentClip.timelineStart + currentClip.sourceIn
                     val fps = project.settings.getFpsRational()
-                    val timeUs = (sourceFrame.toDouble() / (fps.numerator.toDouble() / fps.denominator.toDouble()) * 1_000_000.0).toLong()
-                    
-                    StillFrameFallback(
-                        uriString = currentAsset.localOriginalUriString ?: currentAsset.originalUriString, 
-                        timeUs = timeUs, 
-                        project = project, 
-                        projectFrame = playheadFrame, 
-                        clipTransform = effectiveTransform, 
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    val timeUs = TimelineFrameResolver.resolveSourceFrame(playheadFrame, currentClip)
+                        ?.let { sourceFrame ->
+                            TimelineFrameResolver.convertFrameToMicroseconds(
+                                sourceFrame,
+                                fps.numerator,
+                                fps.denominator
+                            )
+                        }
+                    if (timeUs != null) {
+                        StillFrameFallback(
+                            uriString = currentAsset.localOriginalUriString ?: currentAsset.originalUriString,
+                            timeUs = timeUs,
+                            project = project,
+                            projectFrame = playheadFrame,
+                            clipTransform = effectiveTransform,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize().background(Color.Black))
+                    }
                 } else {
                     com.example.timeline.engine.preview.PlayerViewContainer(
                         previewEngine = controller.previewEngine,
@@ -154,15 +158,6 @@ fun CleanVideoCanvas(
                     }
                 }
 
-                TransformHandleOverlay(
-                    clip = currentClip.copy(transform = effectiveTransform),
-                    currentFrame = playheadFrame,
-                    timelineViewModel = timelineViewModel,
-                    onUpdateClipTransform = { clip, transform -> timelineViewModel.updateClipTransform(clip.id, transform) },
-                    onLiveTransformUpdate = { t -> liveTransformOverride = t },
-                    modifier = Modifier.fillMaxSize(),
-                    activeOverlayMode = activeOverlayMode
-                )
                 
                 MotionPathRenderer(
                     clip = currentClip,

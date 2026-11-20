@@ -29,6 +29,45 @@ object LutRepository {
         return lutDataCache[id]
     }
 
+    /**
+     * Re-registers LUT files that were persisted to internal storage by earlier sessions. The
+     * in-memory registry is otherwise empty after an app restart, which made previously imported
+     * LUTs disappear from the picker even though their files still exist.
+     */
+    suspend fun initialize(context: Context): Unit = withContext(Dispatchers.IO) {
+        if (isInitialized) return@withContext
+        val directory = File(context.filesDir, "luts")
+        val files = directory.listFiles { file -> file.isFile && file.name.endsWith(".cube") }
+        files?.forEach { file ->
+            val id = file.name.removePrefix("lut_").removeSuffix(".cube")
+            if (id.isNotEmpty() && !luts.containsKey(id)) {
+                luts[id] = LutEntry(
+                    id = id,
+                    name = file.nameWithoutExtension.removePrefix("lut_"),
+                    path = file.absolutePath,
+                    size = 0,
+                    category = "Imported"
+                )
+            }
+        }
+        isInitialized = true
+    }
+
+    /**
+     * Deletes a LUT's registry entry, cached data, and persisted file. Returns false when the
+     * id is unknown; callers refresh their lists afterwards.
+     */
+    suspend fun deleteLut(id: String): Boolean = withContext(Dispatchers.IO) {
+        val entry = luts.remove(id) ?: return@withContext false
+        lutDataCache.remove(id)
+        val file = File(entry.path)
+        if (!file.exists()) {
+            true
+        } else {
+            file.delete()
+        }
+    }
+
     suspend fun importLut(context: Context, uri: Uri): Result<LutEntry> = withContext(Dispatchers.IO) {
         try {
             val parseResult = CubeLutParser.parseFromUri(context, uri)

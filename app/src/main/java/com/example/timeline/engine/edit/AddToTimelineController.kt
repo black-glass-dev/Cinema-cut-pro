@@ -1,48 +1,65 @@
 package com.example.timeline.engine.edit
 
-import com.example.timeline.core.*
+import com.example.timeline.core.CoreV2EditCommand
+import com.example.timeline.core.CoreV2EditKind
+import com.example.timeline.core.Rational
+import com.example.timeline.core.TimelineClip
+import com.example.timeline.core.TimelineFrameMath
+import com.example.timeline.core.TimelineProject
+import com.example.timeline.core.TimelineTrack
+import com.example.timeline.core.TrackType
+import com.example.timeline.media.FrameRate
 import com.example.timeline.media.MediaAsset
 import java.util.UUID
 
-object AddToTimelineController {
+data class TimelineClipInsertionPlan(
+    /** May include a newly-created empty track, but never contains the proposed clip. */
+    val baseProject: TimelineProject,
+    val command: CoreV2EditCommand,
+    val clip: TimelineClip
+)
 
-    fun determineTargetTrack(project: TimelineProject, mediaAsset: MediaAsset): TimelineTrack {
+/** Builds an insertion request; only Timeline Core v2 may validate or apply the clip edit. */
+object AddToTimelineController {
+    fun determineTargetTrack(project: TimelineProject, mediaAsset: MediaAsset): TimelineTrack? {
         val targetType = if (mediaAsset.mimeType.startsWith("audio/")) TrackType.AUDIO else TrackType.VIDEO
-        val unlockedTrack = project.tracks.firstOrNull { it.type == targetType && !it.isLocked }
-        if (unlockedTrack != null) {
-            return unlockedTrack
-        }
-        val fallbackTrack = project.tracks.firstOrNull { it.type == targetType }
-        if (fallbackTrack != null) {
-            return fallbackTrack
-        }
-        // Should create a new track, but for now just return the very first track if possible (fallback)
-        return project.tracks.firstOrNull() ?: throw IllegalStateException("No tracks available")
+        return project.tracks.firstOrNull { it.type == targetType && !it.isLocked }
     }
 
-    fun findEmptySpace(track: TimelineTrack, desiredStart: Long, duration: Long): Long {
+    /** Finds the first non-overlapping start at or after [desiredStart], rejecting overflow. */
+    internal fun findEmptySpace(track: TimelineTrack, desiredStart: Long, duration: Long): Long? {
+        if (desiredStart < 0L || duration <= 0L) return null
         var currentStart = desiredStart
         while (true) {
-            val overlappingClip = track.clips.find { clip ->
-                currentStart < clip.timelineEnd && (currentStart + duration) > clip.timelineStart
+            val candidateEnd = try {
+                Math.addExact(currentStart, duration)
+            } catch (_: ArithmeticException) {
+                return null
             }
-            if (overlappingClip == null) {
-                break
+            var latestOverlapEnd: Long? = null
+            for (clip in track.clips) {
+                val clipEnd = try {
+                    Math.addExact(clip.timelineStart, clip.duration)
+                } catch (_: ArithmeticException) {
+                    return null
+                }
+                if (currentStart < clipEnd && candidateEnd > clip.timelineStart) {
+                    latestOverlapEnd = maxOf(latestOverlapEnd ?: clipEnd, clipEnd)
+                }
             }
-            currentStart = overlappingClip.timelineEnd
+            val nextStart = latestOverlapEnd ?: return currentStart
+            if (nextStart <= currentStart) return null
+            currentStart = nextStart
         }
-        return currentStart
     }
 
-    /** The first inserted timeline item is anchored at frame zero, regardless of a stale playhead. */
+    /** The first video item is anchored at frame zero; later items start at the playhead. */
     internal fun resolveStartFrame(
         project: TimelineProject,
         targetTrack: TimelineTrack,
         playheadFrame: Long,
         duration: Long
-    ): Long {
-        // Audio-only clips do not establish the video sequence start. The first video clip
-        // must begin at frame zero even if the project already contains an audio bed.
+    ): Long? {
         val hasExistingVideoClips = project.tracks.any { track ->
             track.type == TrackType.VIDEO && track.isVisible && track.clips.any { it.isEnabled }
         }
@@ -50,119 +67,92 @@ object AddToTimelineController {
         return findEmptySpace(targetTrack, desiredStart, duration)
     }
 
-    fun createAddClipCommand(project: TimelineProject, mediaAsset: MediaAsset, playheadFrame: Long, mode: String = "active", selectedTrackId: String? = null): Pair<TimelineProject, TimelineClip> {
-        var p = project
+    /**
+     * Creates a native insert request plus any empty-track metadata needed to host it. Unknown or
+     * unrepresentable source durations reject rather than inventing a 150-frame placeholder.
+     */
+    fun createClipInsertionPlan(
+        project: TimelineProject,
+        mediaAsset: MediaAsset,
+        playheadFrame: Long,
+        mode: String = "active",
+        selectedTrackId: String? = null
+    ): TimelineClipInsertionPlan? {
+        val durationProjectFrames = durationInProjectFrames(project, mediaAsset) ?: return null
+        var baseProject = project
         val hasVideo = mediaAsset.metadata.hasVideo || mediaAsset.mimeType.startsWith("image/")
         val hasAudio = mediaAsset.metadata.hasAudio
-
-        val fpsRational = p.settings.getFpsRational()
-        val durationProjectFrames = if (mediaAsset.metadata.durationUs > 0) {
-            // Convert us to frames: frames = (durationUs * fpsNumerator) / (1,000,000 * fpsDenominator)
-            val computed = (mediaAsset.metadata.durationUs * fpsRational.numerator) / (1_000_000L * fpsRational.denominator)
-            if (computed > 0) computed else 150L
+        val targetType = when {
+            hasVideo -> TrackType.VIDEO
+            hasAudio -> TrackType.AUDIO
+            else -> TrackType.VIDEO
+        }
+        val targetTrack = if (mode == "active") {
+            val selected = selectedTrackId?.let { id ->
+                baseProject.tracks.firstOrNull { it.id == id && it.type == targetType && !it.isLocked && it.isVisible }
+            }
+            val existingEnabledVisibleVideo = baseProject.tracks.any { track ->
+                track.type == TrackType.VIDEO && track.isVisible && track.clips.any { it.isEnabled }
+            }
+            selected ?: baseProject.tracks.firstOrNull { track ->
+                track.type == targetType && track.isVisible && !track.isLocked &&
+                    (targetType != TrackType.VIDEO ||
+                        if (existingEnabledVisibleVideo) track.clips.any { it.isEnabled }
+                        else track.clips.isEmpty())
+            }
         } else {
-            if (mediaAsset.metadata.durationFramesInSourceRate > 0) mediaAsset.metadata.durationFramesInSourceRate else 150L
-        }
+            null
+        } ?: TimelineTrack(
+            id = UUID.randomUUID().toString(),
+            name = when (targetType) {
+                TrackType.AUDIO -> "Audio ${baseProject.tracks.count { it.type == TrackType.AUDIO } + 1}"
+                else -> "Video ${baseProject.tracks.count { it.type == TrackType.VIDEO } + 1}"
+            },
+            type = targetType,
+            height = if (targetType == TrackType.AUDIO) 80 else 100
+        ).also { newTrack -> baseProject = baseProject.copy(tracks = baseProject.tracks + newTrack) }
 
-        var primaryClip: TimelineClip? = null
-        
-        if (hasVideo) {
-            var targetTrack: TimelineTrack? = null
-            if (mode == "active") {
-                val hasExistingEnabledVisibleVideo = p.tracks.any { track ->
-                    track.type == TrackType.VIDEO && track.isVisible && track.clips.any { it.isEnabled }
-                }
-                targetTrack = p.tracks.firstOrNull { track ->
-                    track.type == TrackType.VIDEO && track.isVisible && !track.isLocked &&
-                        (if (hasExistingEnabledVisibleVideo) track.clips.any { it.isEnabled } else track.clips.isEmpty())
-                }
-            }
-            if (targetTrack == null) {
-                targetTrack = TimelineTrack(
-                    id = UUID.randomUUID().toString(),
-                    name = "Video ${p.tracks.count { it.type == TrackType.VIDEO } + 1}",
-                    type = TrackType.VIDEO,
-                    height = 100
-                )
-                p = p.copy(tracks = p.tracks + targetTrack)
-            }
-            
-            
-            val startFrame = resolveStartFrame(p, targetTrack, playheadFrame, durationProjectFrames)
-            primaryClip = TimelineClip(
-                id = UUID.randomUUID().toString(),
-                trackId = targetTrack.id,
-                mediaId = mediaAsset.assetId,
-                name = mediaAsset.displayName,
-                sourceIn = 0,
-                sourceOut = durationProjectFrames,
-                timelineStart = startFrame,
-                type = ClipType.MEDIA
-            )
-            p = CoreTimelineEngine.addClip(p, targetTrack.id, primaryClip).project
-        }
-        
-        if (hasAudio && !hasVideo) {
-            var targetTrack: TimelineTrack? = null
-            if (mode == "active") {
-                targetTrack = p.tracks.firstOrNull { it.type == TrackType.AUDIO && !it.isLocked }
-            }
-            if (targetTrack == null) {
-                targetTrack = TimelineTrack(
-                    id = UUID.randomUUID().toString(),
-                    name = "Audio ${p.tracks.count { it.type == TrackType.AUDIO } + 1}",
-                    type = TrackType.AUDIO,
-                    height = 80
-                )
-                p = p.copy(tracks = p.tracks + targetTrack)
-            }
-            
-            // If primaryClip (video) exists, sync the audio clip's start frame to match it
-            val startFrame = primaryClip?.timelineStart ?: resolveStartFrame(p, targetTrack, playheadFrame, durationProjectFrames)
-            val audioClip = TimelineClip(
-                id = UUID.randomUUID().toString(),
-                trackId = targetTrack.id,
-                mediaId = mediaAsset.assetId,
-                name = mediaAsset.displayName + " (Audio)",
-                sourceIn = 0,
-                sourceOut = durationProjectFrames,
-                timelineStart = startFrame,
-                type = ClipType.MEDIA
-            )
-            p = CoreTimelineEngine.addClip(p, targetTrack.id, audioClip).project
-            if (primaryClip == null) {
-                primaryClip = audioClip
-            }
-        }
-        
-        if (primaryClip == null) {
-            // Fallback for unknown media, assume video behavior
-            var targetTrack = p.tracks.firstOrNull { it.type == TrackType.VIDEO && !it.isLocked } ?: p.tracks.firstOrNull { it.type == TrackType.VIDEO }
-            if (targetTrack == null) {
-                targetTrack = TimelineTrack(
-                    id = UUID.randomUUID().toString(),
-                    name = "Video ${p.tracks.count { it.type == TrackType.VIDEO } + 1}",
-                    type = TrackType.VIDEO,
-                    height = 100
-                )
-                p = p.copy(tracks = p.tracks + targetTrack)
-            }
-            
-            
-            val startFrame = resolveStartFrame(p, targetTrack, playheadFrame, durationProjectFrames)
-            primaryClip = TimelineClip(
-                id = UUID.randomUUID().toString(),
-                trackId = targetTrack.id,
-                mediaId = mediaAsset.assetId,
-                name = mediaAsset.displayName,
-                sourceIn = 0,
-                sourceOut = durationProjectFrames,
-                timelineStart = startFrame,
-                type = ClipType.MEDIA
-            )
-            p = CoreTimelineEngine.addClip(p, targetTrack.id, primaryClip).project
-        }
+        val startFrame = resolveStartFrame(baseProject, targetTrack, playheadFrame, durationProjectFrames)
+            ?: return null
+        val clip = TimelineClip(
+            id = UUID.randomUUID().toString(),
+            trackId = targetTrack.id,
+            mediaId = mediaAsset.assetId,
+            name = mediaAsset.displayName,
+            sourceIn = 0L,
+            sourceOut = durationProjectFrames,
+            timelineStart = startFrame
+        )
+        return TimelineClipInsertionPlan(
+            baseProject = baseProject,
+            command = CoreV2EditCommand(
+                kind = CoreV2EditKind.INSERT,
+                targetTrackId = targetTrack.id,
+                insertedClip = clip
+            ),
+            clip = clip
+        )
+    }
 
-        return Pair(p, primaryClip!!)
+    private fun durationInProjectFrames(project: TimelineProject, mediaAsset: MediaAsset): Long? {
+        val projectRate = project.settings.getFpsRational()
+        val metadata = mediaAsset.metadata
+        val durationFrames = if (metadata.durationUs > 0L) {
+            TimelineFrameMath.framesFromMicroseconds(metadata.durationUs, projectRate)
+        } else {
+            val sourceFrameRate: FrameRate? = metadata.exactFrameRate ?: metadata.estimatedFrameRate
+            if (metadata.durationFramesInSourceRate <= 0L || sourceFrameRate == null) {
+                null
+            } else {
+                TimelineFrameMath.convertFrameCount(
+                    frameCount = metadata.durationFramesInSourceRate,
+                    sourceNumerator = sourceFrameRate.numerator,
+                    sourceDenominator = sourceFrameRate.denominator,
+                    projectNumerator = projectRate.numerator,
+                    projectDenominator = projectRate.denominator
+                )
+            }
+        }
+        return durationFrames?.takeIf { it > 0L }
     }
 }

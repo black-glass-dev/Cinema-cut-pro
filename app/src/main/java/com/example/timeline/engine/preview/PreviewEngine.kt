@@ -12,7 +12,6 @@ enum class PreviewEngineType(val displayName: String) {
     BROWSER("WebView/Browser"),
     STILL_FRAME("Still Frame"),
     PROXY_PREVIEW("Proxy Preview"),
-    NATIVE_CPP("Native C++"),
     MOTIONCAM_RAW("MotionCam RAW (native)")
 }
 

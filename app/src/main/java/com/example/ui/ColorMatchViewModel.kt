@@ -58,8 +58,8 @@ class ColorMatchViewModel(
         viewModelScope.launch {
             try {
                 // Determine appropriate frame bounds to sample
-                val refTimeUs = calculateMidpointSourceTimeUs(project, refClipResult.first)
-                val targetTimeUs = calculateMidpointSourceTimeUs(project, targetClipResult.first)
+                val refTimeUs = calculateMidpointSourceTimeUs(project, refClipResult.first) ?: return@launch
+                val targetTimeUs = calculateMidpointSourceTimeUs(project, targetClipResult.first) ?: return@launch
 
                 val refBitmap = extractFrame(refClipResult.second.originalUriString, refTimeUs)
                 val targetBitmap = extractFrame(targetClipResult.second.originalUriString, targetTimeUs)
@@ -121,9 +121,13 @@ class ColorMatchViewModel(
         return Pair(clip, asset)
     }
 
-    private fun calculateMidpointSourceTimeUs(project: TimelineProject, clip: TimelineClip): Long {
+    private fun calculateMidpointSourceTimeUs(project: TimelineProject, clip: TimelineClip): Long? {
         val fps = project.settings.getFpsRational()
-        val midFrame = clip.sourceIn + (clip.duration / 2)
+        val midFrame = try {
+            Math.addExact(clip.sourceIn, clip.duration / 2L)
+        } catch (_: ArithmeticException) {
+            return null
+        }
         return TimelineFrameResolver.convertFrameToMicroseconds(midFrame, fps.numerator, fps.denominator)
     }
 

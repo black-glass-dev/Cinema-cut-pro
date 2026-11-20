@@ -1,6 +1,9 @@
 package com.example.timeline.export.model
 
 import com.example.timeline.core.ProjectSettings
+import com.example.timeline.core.Rational
+import com.example.timeline.core.TimelineFrameMath
+import java.math.BigInteger
 import java.util.UUID
 
 object ExportHelper {
@@ -71,16 +74,25 @@ object ExportHelper {
         )
     }
 
-    fun calculateTotalFrames(settings: ExportSettings, durationSecs: Double): Long {
-        val fps = settings.frameRate.floatValue
-        return (fps * durationSecs).toLong()
-    }
+    /** Duration is integer microseconds; output frame count is rounded up to cover the full duration. */
+    fun calculateTotalFrames(settings: ExportSettings, durationUs: Long): Long? =
+        TimelineFrameMath.framesFromMicrosecondsCeiling(
+            durationUs,
+            Rational(settings.frameRate.numerator, settings.frameRate.denominator)
+        )
 
-    fun estimateFileSize(settings: ExportSettings, durationSecs: Double): Long {
-        val vidBitrateBytesSec = settings.videoBitrate / 8L
-        val audBitrateBytesSec = settings.audioBitrate / 8L
-        val totalBytesSec = vidBitrateBytesSec + audBitrateBytesSec
-        return (totalBytesSec * durationSecs).toLong()
+    /** Exact bitrate-size estimate in bytes; null means invalid duration or Long overflow. */
+    fun estimateFileSize(settings: ExportSettings, durationUs: Long): Long? {
+        if (durationUs < 0L || settings.videoBitrate < 0 || settings.audioBitrate < 0) return null
+        val bitsPerSecond = BigInteger.valueOf(settings.videoBitrate.toLong())
+            .add(BigInteger.valueOf(settings.audioBitrate.toLong()))
+        return try {
+            bitsPerSecond.multiply(BigInteger.valueOf(durationUs))
+                .divide(BigInteger.valueOf(8_000_000L))
+                .longValueExact()
+        } catch (_: ArithmeticException) {
+            null
+        }
     }
 
     fun validateExportSettings(settings: ExportSettings): ExportValidationResult {

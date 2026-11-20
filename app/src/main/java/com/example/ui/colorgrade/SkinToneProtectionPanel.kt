@@ -50,7 +50,9 @@ fun SkinToneProtectionPanel(
             },
             onReset = {
                 viewModel.updateAdjustmentParam("skinToneProtection", 0f)
-            }
+            },
+            onDragStart = { viewModel.beginAdjustmentDrag() },
+            onDragEnd = { viewModel.endAdjustmentDrag("Skin Tone Protection") }
         )
         
         Spacer(modifier = Modifier.height(8.dp))
@@ -63,8 +65,10 @@ fun SkinToneProtectionPanel(
                 viewModel.updateAdjustmentParamLive("skinToneHueCenter", value)
             },
             onReset = {
-                viewModel.updateAdjustmentParam("skinToneHueCenter", 0f)
-            }
+                viewModel.updateAdjustmentParam("skinToneHueCenter", 0.083f)
+            },
+            onDragStart = { viewModel.beginAdjustmentDrag() },
+            onDragEnd = { viewModel.endAdjustmentDrag("Skin Hue Center") }
         )
         
         Spacer(modifier = Modifier.height(8.dp))
@@ -78,7 +82,9 @@ fun SkinToneProtectionPanel(
             },
             onReset = {
                 viewModel.updateAdjustmentParam("skinToneHueWidth", 0.05f)
-            }
+            },
+            onDragStart = { viewModel.beginAdjustmentDrag() },
+            onDragEnd = { viewModel.endAdjustmentDrag("Skin Hue Width") }
         )
 
         Spacer(modifier = Modifier.height(16.dp))

@@ -15,6 +15,29 @@ import org.junit.Test
 
 class TimelineGestureControllerTest {
     @Test
+    fun trimDragTargetsClampToLegalTimelineAndKnownSourceBounds() {
+        val clip = TimelineClip(
+            id = "clip",
+            trackId = "video-track",
+            mediaId = "media",
+            name = "clip.mp4",
+            sourceIn = 5L,
+            sourceOut = 100L,
+            timelineStart = 10L
+        )
+        val project = TimelineProject(
+            id = "project",
+            settings = ProjectSettings(projectId = "project", projectName = "Test project"),
+            tracks = listOf(TimelineTrack("video-track", "Video 1", TrackType.VIDEO, clips = listOf(clip)))
+        )
+
+        assertEquals(5L, TimelineGestureController.clampTrimTarget(TimelineDragAction.TrimStart(clip, 10L), Long.MIN_VALUE, project))
+        assertEquals(104L, TimelineGestureController.clampTrimTarget(TimelineDragAction.TrimStart(clip, 10L), Long.MAX_VALUE, project))
+        assertEquals(11L, TimelineGestureController.clampTrimTarget(TimelineDragAction.TrimEnd(clip, 105L), Long.MIN_VALUE, project))
+        assertEquals(105L, TimelineGestureController.clampTrimTarget(TimelineDragAction.TrimEnd(clip, 105L), Long.MAX_VALUE, project))
+    }
+
+    @Test
     fun testINV15_DragOnClipIsDisabledWhenNativeCoreIsUnavailable() {
         NativeTimelineCoreV2.markUnavailable()
         val clip = TimelineClip(

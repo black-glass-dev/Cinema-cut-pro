@@ -28,7 +28,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.Card
@@ -49,6 +48,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.res.painterResource
+import com.example.R
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -92,7 +93,11 @@ fun HomeScreen(
                     .background(CinemaColors.Ink),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Filled.Movie, contentDescription = null, tint = CinemaColors.Red, modifier = Modifier.size(22.dp))
+                Image(
+                    painter = painterResource(R.drawable.cinema_cut_reel),
+                    contentDescription = null,
+                    modifier = Modifier.size(27.dp)
+                )
             }
             Text(
                 "Cinema Cut Pro",
@@ -251,7 +256,7 @@ private fun RecentProjectCard(
                     if (thumbnail != null) {
                         Image(thumbnail!!.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                     } else {
-                        Icon(Icons.Filled.Movie, contentDescription = null, tint = CinemaColors.Red, modifier = Modifier.size(27.dp))
+                        Image(painterResource(R.drawable.cinema_cut_reel), contentDescription = null, modifier = Modifier.size(32.dp))
                     }
                 }
                 Column(Modifier.fillMaxWidth().padding(horizontal = 9.dp, vertical = 6.dp)) {
@@ -271,7 +276,7 @@ private fun RecentProjectCard(
                     if (thumbnail != null) {
                         Image(thumbnail!!.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                     } else {
-                        Icon(Icons.Filled.Movie, contentDescription = null, tint = CinemaColors.Red, modifier = Modifier.size(25.dp))
+                        Image(painterResource(R.drawable.cinema_cut_reel), contentDescription = null, modifier = Modifier.size(30.dp))
                     }
                 }
                 Column(Modifier.weight(1f).padding(start = 11.dp, end = 6.dp)) {

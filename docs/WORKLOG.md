@@ -204,3 +204,9 @@ Next: run the Android CI gate on this branch, fix compile/test errors, publish a
 
 ## 2026-10-10 — New Project CI fixes and APK #106
 Compile iteration one found the scoped Compose `weight` import, ratio-preset pair predicate, and missing `TextButton` import; fixed in `1152867`. Android CI run `44746339832` PASS: Kotlin/native build, JVM tests, native host tests, FFmpeg checks, APK assembly, license verification, checksum and release. APK `Cinema-Cut-Pro-debug-106-1.apk` (89,925,785 bytes), SHA-256 `5f0f7be3d971935acaefede0d0efc1c6886f50d7e2d0e7ee0d4bf2815902c576`: https://github.com/black-glass-dev/Cinema-cut-pro/releases/tag/android-test-106-1. Device playback, canvas ratio/drag, custom-input behavior, and screenshot pixel match remain UNVERIFIED for the user’s handset pass; local Gradle is still unavailable without Java.
+
+## 2026-10-10 — Timeline, multi-import/export, and brand asset checkpoint
+Done: serialized async media imports to preserve both selected MP4s and clip/history snapshots; bounded trim drags to legal source/timeline frames; removed duplicate ruler/playhead header offsets; added gap seeking coverage, Input beside Export, and the supplied reel/Android launcher icons.
+Evidence: `./tools/run_timeline_core_tests.sh` PASS (170,624 assertions); `python3 tools/run_native_export_tests.py` PASS; brand ZIP integrity PASS; added JVM validation cases for two sequential MP4s and split/trimmed clips.
+Status: exact multi-import, split/trim export tests and Android compile are UNVERIFIED because this environment has no Java runtime; physical-device gestures/export are also UNVERIFIED. Color grading remains deferred.
+Next: run Android CI on this focused commit, fix any compile/test failures, then ask for device verification of multi-import, trim edges, playhead placement, and real MP4 exports.

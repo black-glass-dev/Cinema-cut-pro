@@ -19,6 +19,35 @@ class TimelineUiGeometryTest {
     }
 
     @Test
+    fun tapsInEmptyTimelineGapsPlacePlayheadAtTheTappedFrame() {
+        val first = TimelineClip(
+            id = "first",
+            trackId = "video",
+            mediaId = "media-a",
+            name = "first.mp4",
+            sourceIn = 0L,
+            sourceOut = 50L,
+            timelineStart = 0L
+        )
+        val second = TimelineClip(
+            id = "second",
+            trackId = "video",
+            mediaId = "media-b",
+            name = "second.mp4",
+            sourceIn = 0L,
+            sourceOut = 50L,
+            timelineStart = 200L
+        )
+        val project = TimelineProject(
+            id = "project",
+            settings = ProjectSettings(projectId = "project", projectName = "Test"),
+            tracks = listOf(TimelineTrack("video", "Video", TrackType.VIDEO, clips = listOf(first, second)))
+        )
+
+        assertEquals(125L, TimelineUiGeometry.tapToPlayheadFrame(125f, 0f, 1f, project))
+    }
+
+    @Test
     fun clampsScrubbingToTheSequenceEndAndZero() {
         val clip = TimelineClip(
             id = "clip",

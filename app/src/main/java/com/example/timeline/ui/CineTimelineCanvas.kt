@@ -333,12 +333,13 @@ fun CineTimelineCanvas(
                                     is TimelineDragAction.TrimStart -> {
                                         val currentX = change.position.x + scrollX
                                         val frame = TimelineUiGeometry.xToFrame(currentX, pixelsPerFrame)
+                                        val boundedFrame = TimelineGestureController.clampTrimTarget(action, max(0L, frame), uiState.project)
                                         val snapped = if (uiState.snapSettings.isSnappingEnabled) {
                                             TimelineGestureController.snapFrame(
-                                                max(0L, frame), uiState.project, playheadFrameFlow.value, pixelsPerFrame,
+                                                boundedFrame, uiState.project, playheadFrameFlow.value, pixelsPerFrame,
                                                 action.clip.id, uiState.snapSettings
-                                            )
-                                        } else max(0L, frame)
+                                            )?.let { TimelineGestureController.clampTrimTarget(action, it, uiState.project) }
+                                        } else boundedFrame
                                         if (snapped == null) {
                                             dragAction = TimelineDragAction.None
                                             dragPreviewProject = null
@@ -351,12 +352,13 @@ fun CineTimelineCanvas(
                                     is TimelineDragAction.TrimEnd -> {
                                         val currentX = change.position.x + scrollX
                                         val frame = TimelineUiGeometry.xToFrame(currentX, pixelsPerFrame)
+                                        val boundedFrame = TimelineGestureController.clampTrimTarget(action, max(0L, frame), uiState.project)
                                         val snapped = if (uiState.snapSettings.isSnappingEnabled) {
                                             TimelineGestureController.snapFrame(
-                                                max(0L, frame), uiState.project, playheadFrameFlow.value, pixelsPerFrame,
+                                                boundedFrame, uiState.project, playheadFrameFlow.value, pixelsPerFrame,
                                                 action.clip.id, uiState.snapSettings
-                                            )
-                                        } else max(0L, frame)
+                                            )?.let { TimelineGestureController.clampTrimTarget(action, it, uiState.project) }
+                                        } else boundedFrame
                                         if (snapped == null) {
                                             dragAction = TimelineDragAction.None
                                             dragPreviewProject = null
@@ -465,7 +467,7 @@ fun CineTimelineCanvas(
                 }
                 
                 // Fixed top overlay for Ruler
-                Box(modifier = Modifier.fillMaxWidth().height(rulerHeightDp).padding(start = trackHeaderWidth)) {
+                Box(modifier = Modifier.fillMaxWidth().height(rulerHeightDp)) {
                     TimelineRulerView(scrollX, timelineViewportWidth.toInt(), pixelsPerFrame, uiState.project.settings.getFpsRational())
                 }
                 
@@ -475,7 +477,7 @@ fun CineTimelineCanvas(
                     pixelsPerFrame = pixelsPerFrame,
                     scrollX = scrollX,
                     frameToX = TimelineUiGeometry::frameToX,
-                    startOffset = trackHeaderWidth
+                    startOffset = 0.dp
                 )
             }
         }

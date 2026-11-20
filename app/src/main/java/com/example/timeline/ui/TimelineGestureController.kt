@@ -85,6 +85,38 @@ object TimelineGestureController {
         return TimelineDragAction.MoveClip(hitClip, offsetFrames)
     }
 
+    /** Keeps trim-edge drags inside the clip's legal timeline/source range before preview or commit. */
+    fun clampTrimTarget(action: TimelineDragAction, targetFrame: Long, project: TimelineProject): Long {
+        val clip = when (action) {
+            is TimelineDragAction.TrimStart -> action.clip
+            is TimelineDragAction.TrimEnd -> action.clip
+            else -> return targetFrame
+        }
+        if (clip.duration <= 0L) return targetFrame
+        return when (action) {
+            is TimelineDragAction.TrimStart -> {
+                val earliestTimelineFrame = (clip.timelineStart - clip.sourceIn).coerceAtLeast(0L)
+                val latestTimelineFrame = clip.timelineEnd - 1L
+                targetFrame.coerceIn(earliestTimelineFrame, latestTimelineFrame)
+            }
+            is TimelineDragAction.TrimEnd -> {
+                val minimumEnd = Math.addExact(clip.timelineStart, 1L)
+                val asset = project.mediaAssets.firstOrNull { it.assetId == clip.mediaId }
+                val sourceEnd = asset?.metadata?.durationUs?.takeIf { it > 0L }?.let { durationUs ->
+                    TimelineFrameMath.framesFromMicroseconds(durationUs, project.settings.getFpsRational())
+                }?.takeIf { it > 0L } ?: clip.sourceOut
+                val maxDuration = (sourceEnd - clip.sourceIn).coerceAtLeast(clip.duration)
+                val maximumEnd = try {
+                    Math.addExact(clip.timelineStart, maxDuration)
+                } catch (_: ArithmeticException) {
+                    Long.MAX_VALUE
+                }
+                targetFrame.coerceIn(minimumEnd, maximumEnd)
+            }
+            else -> targetFrame
+        }
+    }
+
     /** Builds the exact native command batch shared by preview and commit. */
     fun previewCommands(
         action: TimelineDragAction,

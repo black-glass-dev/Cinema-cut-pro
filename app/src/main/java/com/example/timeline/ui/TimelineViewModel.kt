@@ -34,9 +34,14 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 class TimelineViewModel(context: Context) : ViewModel() {
+    // Picked files must update the shared project/history serially; parallel analysis used to let
+    // two selections each publish from the same stale project snapshot and lose one imported clip.
+    private val mediaImportMutex = Mutex()
     private val historyManager = TimelineHistoryManager()
     private val mediaAnalyzer: MediaAnalyzer = AndroidMediaAnalyzer(context)
     private val importWorkManager = ImportWorkManager(context)
@@ -291,69 +296,71 @@ class TimelineViewModel(context: Context) : ViewModel() {
 
     fun enqueueMediaAnalysis(uri: Uri) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            try {
-                val hasPermission = com.example.timeline.media.ImportPermissionManager.persistPermission(contextRef, uri)
-                val projectId = _uiState.value.project.id
-                var initialAsset = com.example.timeline.media.DocumentMediaReader.createAnalyzingAsset(contextRef, uri, projectId)?.copy(
-                    persistedUriPermission = hasPermission,
-                    previewStatus = PreviewStatus.NOT_TESTED
-                )
+            mediaImportMutex.withLock {
+                try {
+                    val hasPermission = com.example.timeline.media.ImportPermissionManager.persistPermission(contextRef, uri)
+                    val projectId = _uiState.value.project.id
+                    var initialAsset = com.example.timeline.media.DocumentMediaReader.createAnalyzingAsset(contextRef, uri, projectId)?.copy(
+                        persistedUriPermission = hasPermission,
+                        previewStatus = PreviewStatus.NOT_TESTED
+                    )
                 
-                if (initialAsset != null) {
-                    val currentProject = _uiState.value.project
+                    if (initialAsset != null) {
+                        val currentProject = _uiState.value.project
                     
-                    val isVideo = initialAsset.assetType == com.example.timeline.media.MediaAssetType.VIDEO ||
-                        initialAsset.mimeType.startsWith("video/")
-                    val prefix = if (isVideo) "Video " else "Audio "
-                    val currentCount = currentProject.mediaAssets.count { it.displayName.startsWith(prefix) }
-                    val newName = "$prefix${currentCount + 1}"
+                        val isVideo = initialAsset.assetType == com.example.timeline.media.MediaAssetType.VIDEO ||
+                            initialAsset.mimeType.startsWith("video/")
+                        val prefix = if (isVideo) "Video " else "Audio "
+                        val currentCount = currentProject.mediaAssets.count { it.displayName.startsWith(prefix) }
+                        val newName = "$prefix${currentCount + 1}"
                     
-                    val updatedMetadata = initialAsset.metadata.copy(originalFilename = initialAsset.displayName)
-                    initialAsset = initialAsset.copy(displayName = newName, metadata = updatedMetadata)
+                        val updatedMetadata = initialAsset.metadata.copy(originalFilename = initialAsset.displayName)
+                        initialAsset = initialAsset.copy(displayName = newName, metadata = updatedMetadata)
                     
                     
-                    // Prevent duplicate import of same URI at same time
-                    if (currentProject.mediaAssets.none { it.originalUriString == uri.toString() && it.mediaErrorStatus == MediaErrorStatus.NONE && it.mediaAvailabilityStatus != com.example.timeline.media.MediaAvailabilityStatus.MISSING_NEEDS_RELINK }) {
-                        val p2 = currentProject.copy(mediaAssets = currentProject.mediaAssets + initialAsset)
-                        updateState(p2, markDirty = false)
+                        // Prevent duplicate import of same URI at same time
+                        if (currentProject.mediaAssets.none { it.originalUriString == uri.toString() && it.mediaErrorStatus == MediaErrorStatus.NONE && it.mediaAvailabilityStatus != com.example.timeline.media.MediaAvailabilityStatus.MISSING_NEEDS_RELINK }) {
+                            val p2 = currentProject.copy(mediaAssets = currentProject.mediaAssets + initialAsset)
+                            updateState(p2, markDirty = false)
                         
-                        val localPath = copyMediaToLocalStore(
-                            uri,
-                            initialAsset.assetId,
-                            initialAsset.displayName,
-                            projectId,
-                            initialAsset.metadata.originalFilename
-                        )
+                            val localPath = copyMediaToLocalStore(
+                                uri,
+                                initialAsset.assetId,
+                                initialAsset.displayName,
+                                projectId,
+                                initialAsset.metadata.originalFilename
+                            )
                         
-                        initialAsset = initialAsset.copy(
-                            localOriginalUriString = localPath,
-                            mediaAvailabilityStatus = if (localPath != null) com.example.timeline.media.MediaAvailabilityStatus.AVAILABLE_LOCAL_COPY else com.example.timeline.media.MediaAvailabilityStatus.AVAILABLE_ORIGINAL_URI,
-                            previewStatus = PreviewStatus.NOT_TESTED
-                        )
-                        updateState(_uiState.value.project.copy(mediaAssets = _uiState.value.project.mediaAssets.map { if (it.assetId == initialAsset.assetId) initialAsset else it }), markDirty = false)
+                            initialAsset = initialAsset.copy(
+                                localOriginalUriString = localPath,
+                                mediaAvailabilityStatus = if (localPath != null) com.example.timeline.media.MediaAvailabilityStatus.AVAILABLE_LOCAL_COPY else com.example.timeline.media.MediaAvailabilityStatus.AVAILABLE_ORIGINAL_URI,
+                                previewStatus = PreviewStatus.NOT_TESTED
+                            )
+                            updateState(_uiState.value.project.copy(mediaAssets = _uiState.value.project.mediaAssets.map { if (it.assetId == initialAsset.assetId) initialAsset else it }), markDirty = false)
 
-                        val uriToAnalyze = if (localPath != null) Uri.parse(localPath) else uri
-                        val finalAsset = mediaAnalyzer.analyze(initialAsset, uriToAnalyze)
-                        val stateNow = _uiState.value
+                            val uriToAnalyze = if (localPath != null) Uri.parse(localPath) else uri
+                            val finalAsset = mediaAnalyzer.analyze(initialAsset, uriToAnalyze)
+                            val stateNow = _uiState.value
                         
-                        val updatedList = stateNow.project.mediaAssets.map { if (it.assetId == finalAsset.assetId) finalAsset else it }
-                        val pFinal = stateNow.project.copy(mediaAssets = updatedList)
+                            val updatedList = stateNow.project.mediaAssets.map { if (it.assetId == finalAsset.assetId) finalAsset else it }
+                            val pFinal = stateNow.project.copy(mediaAssets = updatedList)
                         
-                        val cmd = SnapshotCommand("Import Media", currentProject, pFinal, emptyList())
-                        historyManager.pushCommand(cmd)
-                        updateState(pFinal)
+                            val cmd = SnapshotCommand("Import Media", currentProject, pFinal, emptyList())
+                            historyManager.pushCommand(cmd)
+                            updateState(pFinal)
                         
-                        if (finalAsset.mediaErrorStatus == MediaErrorStatus.NONE && finalAsset.mediaAvailabilityStatus != com.example.timeline.media.MediaAvailabilityStatus.MISSING_NEEDS_RELINK) {
-                            addClipFromMedia(finalAsset)
-                        }
+                            if (finalAsset.mediaErrorStatus == MediaErrorStatus.NONE && finalAsset.mediaAvailabilityStatus != com.example.timeline.media.MediaAvailabilityStatus.MISSING_NEEDS_RELINK) {
+                                addClipFromMedia(finalAsset)
+                            }
                         
-                        if (finalAsset.proxyStatus == ProxyStatus.REQUIRED) {
-                            generateProxy(finalAsset.assetId)
+                            if (finalAsset.proxyStatus == ProxyStatus.REQUIRED) {
+                                generateProxy(finalAsset.assetId)
+                            }
                         }
                     }
+                } catch (e: Exception) {
+                    if (com.example.BuildConfig.DEBUG) e.printStackTrace()
                 }
-            } catch (e: Exception) {
-                if (com.example.BuildConfig.DEBUG) e.printStackTrace()
             }
         }
     }

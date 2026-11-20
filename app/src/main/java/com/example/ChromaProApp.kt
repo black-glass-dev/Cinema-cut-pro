@@ -67,6 +67,9 @@ fun ChromaProApp() {
     val scopeViewModel: ScopeViewModel = viewModel()
     val editorViewModel: EditorViewModel = viewModel()
     val timelinePreviewController = remember(appContext) { TimelinePreviewController(appContext) }
+    val importLaunchers = com.example.timeline.ui.rememberMediaImportLaunchers(
+        onUrisPicked = { uris -> timelineViewModel.handlePickedUris(uris) }
+    )
 
     // Cold launches always start at Home instead of restoring the editor as the landing screen.
     var route by remember { mutableStateOf(AppRoute.HOME.name) }
@@ -139,6 +142,7 @@ fun ChromaProApp() {
                 EditorTopBar(
                     settings = timelineUiState.project.settings,
                     onExportClick = { showExportDialog = true },
+                    onImportClick = { importLaunchers.videoLauncher.launch(arrayOf("video/*")) },
                     onBack = ::returnHome
                 )
             }
@@ -175,9 +179,6 @@ fun ChromaProApp() {
             )
 
             else -> {
-                val launchers = com.example.timeline.ui.rememberMediaImportLaunchers(
-                    onUrisPicked = { uris -> timelineViewModel.handlePickedUris(uris) }
-                )
                 var relinkAssetId by remember { mutableStateOf<String?>(null) }
                 val relinkLauncher = rememberLauncherForActivityResult(
                     contract = com.example.timeline.media.MediaPickerContract.OpenMultiple
@@ -194,7 +195,7 @@ fun ChromaProApp() {
                     scopeViewModel = scopeViewModel,
                     editorViewModel = editorViewModel,
                     timelinePreviewController = timelinePreviewController,
-                    launchers = launchers,
+                    launchers = importLaunchers,
                     onRelinkRequest = { assetId ->
                         relinkAssetId = assetId
                         relinkLauncher.launch(arrayOf("*/*"))

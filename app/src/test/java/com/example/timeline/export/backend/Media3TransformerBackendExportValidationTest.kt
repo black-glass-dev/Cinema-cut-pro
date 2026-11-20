@@ -225,6 +225,34 @@ class Media3TransformerBackendExportValidationTest {
     }
 
     @Test
+    fun twoImportedMp4ClipsOnOneSequentialTrackPassExportValidation() {
+        val first = asset("first")
+        val second = asset("second")
+        val project = project(
+            listOf(first, second),
+            listOf(clip("first-clip", first.assetId, 0L), clip("second-clip", second.assetId, 100L))
+        )
+        val backend = Media3TransformerBackend(applicationContext, CodecProbe())
+
+        val result = backend.validate(settings(), project)
+
+        assertTrue(result.unsupportedFeatures.joinToString("\n"), result.isValid)
+    }
+
+    @Test
+    fun splitAndTrimmedMp4SegmentsPassSequentialExportValidation() {
+        val source = asset("source")
+        val firstSegment = clip("first-segment", source.assetId, 0L).copy(sourceIn = 20L, sourceOut = 60L)
+        val secondSegment = clip("second-segment", source.assetId, 40L).copy(sourceIn = 60L, sourceOut = 110L)
+        val project = project(listOf(source), listOf(firstSegment, secondSegment))
+        val backend = Media3TransformerBackend(applicationContext, CodecProbe())
+
+        val result = backend.validate(settings(), project)
+
+        assertTrue(result.unsupportedFeatures.joinToString("\n"), result.isValid)
+    }
+
+    @Test
     fun mcrawSensorBitDepthCanUseTheActualEightBitH264Bridge() {
         val source = mcrawAsset("raw-source")
         val project = project(listOf(source), listOf(clip("clip", source.assetId, 0L)))

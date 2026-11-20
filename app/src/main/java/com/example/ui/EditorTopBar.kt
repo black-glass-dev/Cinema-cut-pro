@@ -4,9 +4,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.Image
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -20,6 +21,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.painterResource
+import com.example.R
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +36,7 @@ import com.example.timeline.core.ProjectSettings
 fun EditorTopBar(
     settings: ProjectSettings?,
     onExportClick: () -> Unit,
+    onImportClick: () -> Unit,
     onBack: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -44,7 +48,11 @@ fun EditorTopBar(
         },
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Movie, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Image(
+                    painter = painterResource(R.drawable.cinema_cut_reel),
+                    contentDescription = null,
+                    modifier = Modifier.size(28.dp)
+                )
                 Spacer(modifier = Modifier.width(8.dp))
                 Column {
                     Text(
@@ -65,6 +73,18 @@ fun EditorTopBar(
             }
         },
         actions = {
+            Button(
+                onClick = onImportClick,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                ),
+                shape = RoundedCornerShape(22.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                modifier = Modifier.padding(end = 6.dp).height(36.dp)
+            ) {
+                Text("Input", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
             Button(
                 onClick = onExportClick,
                 colors = ButtonDefaults.buttonColors(

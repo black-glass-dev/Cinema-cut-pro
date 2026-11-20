@@ -2,26 +2,33 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
+/** Brand and neutral palette shared by the home screen and editor chrome. */
+object CinemaColors {
+    val Red = Color(0xFFFF3B30)
+    val Ink = Color(0xFF1A1A1E)
+    val Page = Color(0xFFF2F2F4)
+    val LightGray = Color(0xFFE4E4E8)
+    val Button = Color(0xFF2B2B30)
+    val Muted = Color(0xFF92929A)
+    val SecondaryText = Color(0xFF595961)
+    val Divider = Color(0xFFD8D8DE)
+}
+
 object EditorColors {
-    val BackgroundDark = Color(0xFF0D0D0D) // Deep charcoal / near black
-    val SurfaceDark = Color(0xFF1E1E1E)
-    val SurfaceVariantDark = Color(0xFF2A2A2A)
-    
-    val AccentPrimary = Color(0xFF6B4EE6) // Cinematic Purple/Blue
-    val AccentSecondary = Color(0xFF4A90E2) // Bright Blue
-    
-    val TextPrimary = Color(0xFFF0F0F0)
-    val TextSecondary = Color(0xFFA0A0A0)
-    val TextDisabled = Color(0xFF666666)
-    
-    val Warning = Color(0xFFFFB020) // Amber
-    val Error = Color(0xFFFF4D4F) // Red
-    val Success = Color(0xFF00B96B) // Green
-
-    val TrackVideo = Color(0xFF3E5A78) // Muted blue for video tracks
-    val TrackAudio = Color(0xFF3E7854) // Muted green for audio tracks
-    val TrackAdjustment = Color(0xFF783E6C) // Muted purple for fx tracks
-
-    val TimelineBackground = Color(0xFF080808)
-    val Playhead = Color(0xFFFFFFFF)
+    val BackgroundDark = CinemaColors.Page
+    val SurfaceDark = Color.White
+    val SurfaceVariantDark = CinemaColors.LightGray
+    val AccentPrimary = CinemaColors.Red
+    val AccentSecondary = Color(0xFF36363B)
+    val TextPrimary = CinemaColors.Ink
+    val TextSecondary = Color(0xFF66666E)
+    val TextDisabled = Color(0xFF92929A)
+    val Warning = Color(0xFFFFB020)
+    val Error = Color(0xFFCF2E25)
+    val Success = Color(0xFF008A52)
+    val TrackVideo = Color(0xFF303035)
+    val TrackAudio = Color(0xFF3E7854)
+    val TrackAdjustment = Color(0xFF783E6C)
+    val TimelineBackground = CinemaColors.Ink
+    val Playhead = CinemaColors.Red
 }

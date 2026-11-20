@@ -52,27 +52,33 @@ fun StillFrameFallback(
             withContext(Dispatchers.IO) {
                 try {
                     val retriever = MediaMetadataRetriever()
-                    retriever.setDataSource(context, Uri.parse(uriString))
-                    var bmp = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                    
-                    if (bmp != null) {
+                    val rawBitmap = try {
+                        val sourceUri = Uri.parse(uriString)
+                        if (sourceUri.scheme == "content") retriever.setDataSource(context, sourceUri)
+                        else retriever.setDataSource(sourceUri.path ?: uriString)
+                        retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    } finally {
+                        runCatching { retriever.release() }
+                    }
+
+                    if (rawBitmap != null) {
+                        var bitmap = rawBitmap
                         val maxDimension = 640
-                        val width = bmp.width
-                        val height = bmp.height
+                        val width = bitmap.width
+                        val height = bitmap.height
                         if (width > maxDimension || height > maxDimension) {
                             val ratio = Math.min(maxDimension.toFloat() / width, maxDimension.toFloat() / height)
                             val newWidth = Math.round(ratio * width)
                             val newHeight = Math.round(ratio * height)
-                            val scaledBmp = Bitmap.createScaledBitmap(bmp, newWidth, newHeight, true)
-                            if (scaledBmp != bmp) {
-                                bmp.recycle()
-                                bmp = scaledBmp
+                            val scaledBitmap = Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+                            if (scaledBitmap != bitmap) {
+                                bitmap.recycle()
+                                bitmap = scaledBitmap
                             }
                         }
-                        rawBitmapState.value = bmp
+                        rawBitmapState.value = bitmap
                         lastUriTime.value = Pair(uriString, timeUs)
                     }
-                    retriever.release()
                 } catch (e: Exception) {
                     if (com.example.BuildConfig.DEBUG) e.printStackTrace()
                 }

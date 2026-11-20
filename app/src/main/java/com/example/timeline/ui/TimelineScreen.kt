@@ -12,7 +12,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.foundation.background
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -41,7 +40,7 @@ fun TimelineScreen(viewModel: TimelineViewModel, editorViewModel: com.example.ui
         return // handled in ChromaProApp
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF1F1F4))) {
+    Column(modifier = Modifier.fillMaxSize().background(com.example.ui.theme.CinemaColors.Page)) {
         TimelineToolbar(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
             onImportClick = onImportClick,

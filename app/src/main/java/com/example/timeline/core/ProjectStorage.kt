@@ -33,6 +33,13 @@ class ProjectStorage(private val rootDir: File) {
         projectTemp.renameTo(projectFile)
     }
 
+    fun listProjects(): List<Pair<TimelineProject, ProjectMetadata>> {
+        val directories = rootDir.listFiles { file -> file.isDirectory } ?: return emptyList()
+        return directories.mapNotNull { directory ->
+            loadProject(directory.name)
+        }.sortedByDescending { (_, metadata) -> metadata.modifiedDate }
+    }
+
     fun loadProject(projectId: String): Pair<TimelineProject, ProjectMetadata>? {
         val dir = getProjectDir(projectId)
         val metaFile = File(dir, "metadata.json")

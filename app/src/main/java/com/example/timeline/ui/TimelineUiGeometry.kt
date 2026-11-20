@@ -19,6 +19,17 @@ object TimelineUiGeometry {
         return floor(value + 0.5).toLong()
     }
 
+    /** Converts a tap in the scrollable timeline pane into a sequence-bounded project frame. */
+    fun tapToPlayheadFrame(
+        localX: Float,
+        scrollX: Float,
+        pixelsPerFrame: Float,
+        project: TimelineProject
+    ): Long {
+        val contentX = if (localX.isFinite() && scrollX.isFinite()) localX + scrollX else 0f
+        return clampPlayheadFrame(project, xToFrame(contentX, pixelsPerFrame))
+    }
+
     /** Scrubbing is navigation, not a Core v2 edit; keep it inside the represented sequence. */
     fun clampPlayheadFrame(project: TimelineProject, frame: Long): Long {
         val sequenceEnd = project.tracks.asSequence()

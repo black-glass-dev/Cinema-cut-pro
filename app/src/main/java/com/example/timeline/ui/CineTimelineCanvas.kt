@@ -250,11 +250,15 @@ fun CineTimelineCanvas(
                                 val tapY = offset.y + scrollY - rulerHeightPx
                                 val hitClip = TimelineGestureController.hitTest(tapX, tapY, uiState.project, pixelsPerFrame, trackHeight, trackPadding)
                                 onClipSelected(hitClip?.id)
-                                
-                                if (hitClip == null) {
-                                    val frame = TimelineUiGeometry.xToFrame(tapX, pixelsPerFrame)
-                                    onPlayheadMoved(TimelineUiGeometry.clampPlayheadFrame(uiState.project, frame))
-                                }
+                                // A tap on a clip must both select it and seek. Previously the
+                                // hit-clip branch only selected, which made the red playhead appear
+                                // unresponsive over the most frequently tapped part of the track.
+                                onPlayheadMoved(TimelineUiGeometry.tapToPlayheadFrame(
+                                    localX = offset.x,
+                                    scrollX = scrollX,
+                                    pixelsPerFrame = pixelsPerFrame,
+                                    project = uiState.project
+                                ))
                             }
                         )
                     }

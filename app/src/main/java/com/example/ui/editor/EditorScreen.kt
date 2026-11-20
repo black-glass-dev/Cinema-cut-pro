@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -18,9 +19,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import com.example.timeline.engine.preview.TimelinePreviewController
 import com.example.timeline.ui.TimelineViewModel
@@ -37,15 +41,20 @@ fun EditorScreen(
     editorViewModel: EditorViewModel,
     timelinePreviewController: TimelinePreviewController,
     launchers: com.example.timeline.ui.MediaImportLaunchers,
-    onRelinkRequest: (String) -> Unit
+    onRelinkRequest: (String) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val timelineUiState by timelineViewModel.uiState.collectAsState()
     val isPlaying by timelineViewModel.isPlaying.collectAsState()
     val isSampling by colorAdjustmentViewModel.isEyedropperActive.collectAsState()
     var selectedTab by remember { mutableStateOf("Timeline") }
-    var viewportWeight by remember { mutableFloatStateOf(0.4f) }
+    var viewportWeight by rememberSaveable { mutableFloatStateOf(0.4f) }
+    val screenHeightDp = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
+    val screenHeightPx = with(androidx.compose.ui.platform.LocalDensity.current) {
+        screenHeightDp.toPx().coerceAtLeast(1f)
+    }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = modifier.fillMaxSize()) {
         PlaybackAwareVideoViewport(
             timelineUiState = timelineUiState,
             timelineViewModel = timelineViewModel,
@@ -63,21 +72,22 @@ fun EditorScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(8.dp)
+                .height(28.dp)
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .draggable(
                     orientation = Orientation.Vertical,
                     state = rememberDraggableState { delta ->
-                        viewportWeight = (viewportWeight + delta * 0.001f).coerceIn(0.2f, 0.8f)
+                        viewportWeight = (viewportWeight + delta / screenHeightPx).coerceIn(0.24f, 0.76f)
                     }
-                ),
+                )
+                .semantics { contentDescription = "Drag up or down to resize the preview and timeline" },
             contentAlignment = Alignment.Center
         ) {
             Box(
                 modifier = Modifier
-                    .width(40.dp)
+                    .width(44.dp)
                     .height(4.dp)
-                    .background(MaterialTheme.colorScheme.onSurfaceVariant, RoundedCornerShape(2.dp))
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f), RoundedCornerShape(2.dp))
             )
         }
 

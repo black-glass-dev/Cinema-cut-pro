@@ -38,5 +38,7 @@ class TimelineUiGeometryTest {
         assertEquals(0L, TimelineUiGeometry.clampPlayheadFrame(project, -1L))
         assertEquals(75L, TimelineUiGeometry.clampPlayheadFrame(project, 75L))
         assertEquals(120L, TimelineUiGeometry.clampPlayheadFrame(project, Long.MAX_VALUE))
+        assertEquals(50L, TimelineUiGeometry.tapToPlayheadFrame(80f, 20f, 2f, project))
+        assertEquals(120L, TimelineUiGeometry.tapToPlayheadFrame(500f, 0f, 2f, project))
     }
 }

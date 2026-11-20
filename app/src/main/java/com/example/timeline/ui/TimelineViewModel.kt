@@ -44,6 +44,8 @@ class TimelineViewModel(context: Context) : ViewModel() {
         
     private val storage = ProjectStorage(File(context.filesDir, "timeline_projects"))
     private val versionManager = ProjectVersionManager(storage)
+    private val _recentProjects = MutableStateFlow<List<Pair<TimelineProject, ProjectMetadata>>>(emptyList())
+    val recentProjects: StateFlow<List<Pair<TimelineProject, ProjectMetadata>>> = _recentProjects.asStateFlow()
 
     private val _proxyProgress = MutableStateFlow<Map<String, Float>>(emptyMap())
     val proxyProgress: StateFlow<Map<String, Float>> = _proxyProgress.asStateFlow()
@@ -146,6 +148,50 @@ class TimelineViewModel(context: Context) : ViewModel() {
         }
         if (updatedAssets != stateNow.project.mediaAssets) {
             updateState(stateNow.project.copy(mediaAssets = updatedAssets))
+        }
+    }
+
+    fun refreshRecentProjects() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _recentProjects.value = storage.listProjects().take(20)
+        }
+    }
+
+    fun openRecentProject(projectId: String, onResult: (Boolean) -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val loaded = storage.loadProject(projectId)?.first
+            withContext(Dispatchers.Main.immediate) {
+                if (loaded != null) loadProject(loaded)
+                onResult(loaded != null)
+            }
+        }
+    }
+
+    /** Imports a project JSON document, cloning its ID so it never overwrites an existing project. */
+    fun importProject(uri: Uri, onResult: (String?) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                val content = contextRef.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                    ?: error("The selected project file could not be opened.")
+                val source = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+                    .decodeFromString<TimelineProject>(content)
+                require(source.settings.projectName.isNotBlank()) { "The project file has no project name." }
+                val id = UUID.randomUUID().toString()
+                source.copy(
+                    id = id,
+                    settings = source.settings.copy(projectId = id),
+                    mediaAssets = source.mediaAssets.map { it.copy(projectId = id) }
+                )
+            }
+            withContext(Dispatchers.Main.immediate) {
+                result.onSuccess { imported ->
+                    loadProject(imported)
+                    refreshRecentProjects()
+                    onResult(null)
+                }.onFailure { error ->
+                    onResult(error.message?.takeIf(String::isNotBlank) ?: "Could not import this project file.")
+                }
+            }
         }
     }
 
@@ -1227,9 +1273,11 @@ class TimelineViewModel(context: Context) : ViewModel() {
         TimelineCoreV2Adapter.clearHistory(previousProject.id)
         historyManager.clear()
         _playheadFrame.value = 0L
+        val projectId = settings.projectId.ifBlank { java.util.UUID.randomUUID().toString() }
+        val normalizedSettings = settings.copy(projectId = projectId)
         val newProject = TimelineProject(
-            id = java.util.UUID.randomUUID().toString(),
-            settings = settings,
+            id = projectId,
+            settings = normalizedSettings,
             tracks = emptyList(),
             mediaAssets = emptyList()
         )

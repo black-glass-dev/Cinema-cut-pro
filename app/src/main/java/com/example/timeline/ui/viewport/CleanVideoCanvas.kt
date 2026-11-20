@@ -31,6 +31,7 @@ fun CleanVideoCanvas(
     playheadFrame: Long,
     playerState: com.example.timeline.engine.preview.PreviewState,
     playerError: String?,
+    firstFrameRendered: Boolean = false,
     isSamplingColor: Boolean,
     onColorSampled: (Float, Float, Float) -> Unit,
     timelineViewModel: TimelineViewModel,
@@ -100,6 +101,17 @@ fun CleanVideoCanvas(
                     )
                 
                 val isDirectFailed = currentAsset.previewStatus == PreviewStatus.DIRECT_FAILED_RUNTIME || (hasProxy && currentAsset.previewStatus == PreviewStatus.NOT_TESTED)
+                val stillFrameUri = currentAsset.localOriginalUriString?.takeIf(String::isNotBlank)
+                    ?: currentAsset.originalUriString
+                val stillFrameTimeUs = TimelineFrameResolver.resolveSourceFrame(playheadFrame, currentClip)
+                    ?.let { sourceFrame ->
+                        val fps = project.settings.getFpsRational()
+                        TimelineFrameResolver.convertFrameToMicroseconds(sourceFrame, fps.numerator, fps.denominator)
+                    }
+                val showPosterUntilVideoFrame = !isMcraw &&
+                    currentAsset.mimeType.startsWith("video/") &&
+                    !firstFrameRendered &&
+                    playerError == null
 
                 if (currentAsset.mediaAvailabilityStatus == MediaAvailabilityStatus.MISSING_NEEDS_RELINK || currentAsset.mediaErrorStatus != MediaErrorStatus.NONE) {
                     Box(modifier = Modifier.fillMaxSize().background(Color.Black))
@@ -113,19 +125,10 @@ fun CleanVideoCanvas(
                         modifier = Modifier.fillMaxSize()
                     )
                 } else if (needsStillFrame) {
-                    val fps = project.settings.getFpsRational()
-                    val timeUs = TimelineFrameResolver.resolveSourceFrame(playheadFrame, currentClip)
-                        ?.let { sourceFrame ->
-                            TimelineFrameResolver.convertFrameToMicroseconds(
-                                sourceFrame,
-                                fps.numerator,
-                                fps.denominator
-                            )
-                        }
-                    if (timeUs != null) {
+                    if (stillFrameTimeUs != null) {
                         StillFrameFallback(
-                            uriString = currentAsset.localOriginalUriString ?: currentAsset.originalUriString,
-                            timeUs = timeUs,
+                            uriString = stillFrameUri,
+                            timeUs = stillFrameTimeUs,
                             project = project,
                             projectFrame = playheadFrame,
                             clipTransform = effectiveTransform,
@@ -141,6 +144,20 @@ fun CleanVideoCanvas(
                         clipAdjustments = currentClip.adjustments,
                         playheadFrame = playheadFrame,
                         onSwitchEngine = { type -> controller.setEngineType(type) },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+
+                // Keep a real decoded poster over the black video surface until the selected
+                // decoder emits its first frame. This avoids the indefinite black preview shown
+                // in the user's screenshots while the source/proxy is opening.
+                if (!needsStillFrame && showPosterUntilVideoFrame && stillFrameTimeUs != null) {
+                    StillFrameFallback(
+                        uriString = stillFrameUri,
+                        timeUs = stillFrameTimeUs,
+                        project = project,
+                        projectFrame = playheadFrame,
+                        clipTransform = effectiveTransform,
                         modifier = Modifier.fillMaxSize()
                     )
                 }

@@ -13,7 +13,7 @@ internal object TimelineDesignTokens {
     val Clip = Color(0xFF24262B)
     val Toolbar = Color(0xFF111114)
     val ToolbarButton = Color(0xFF1A1A1E)
-    val Accent = Color(0xFFFF4D55)
+    val Accent = Color(0xFFFF3B30)
 
     val TrackHeaderWidth = 72.dp
     val RulerHeight = 32.dp

@@ -1,30 +1,29 @@
 package com.example.ui.theme
 
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 
-private val DarkColorScheme = darkColorScheme(
-    primary = EditorColors.AccentPrimary,
-    secondary = EditorColors.AccentSecondary,
-    background = EditorColors.BackgroundDark,
-    surface = EditorColors.SurfaceDark,
-    surfaceVariant = EditorColors.SurfaceVariantDark,
-    onPrimary = EditorColors.TextPrimary,
-    onSecondary = EditorColors.TextPrimary,
-    onBackground = EditorColors.TextPrimary,
-    onSurface = EditorColors.TextPrimary,
-    onSurfaceVariant = EditorColors.TextSecondary,
+private val CinemaCutColorScheme = lightColorScheme(
+    primary = CinemaColors.Red,
+    onPrimary = androidx.compose.ui.graphics.Color.White,
+    secondary = CinemaColors.Ink,
+    onSecondary = androidx.compose.ui.graphics.Color.White,
+    background = CinemaColors.Page,
+    onBackground = CinemaColors.Ink,
+    surface = androidx.compose.ui.graphics.Color.White,
+    onSurface = CinemaColors.Ink,
+    surfaceVariant = CinemaColors.LightGray,
+    onSurfaceVariant = CinemaColors.SecondaryText,
     error = EditorColors.Error,
-    outline = EditorColors.TextDisabled
+    outline = CinemaColors.Divider,
+    outlineVariant = CinemaColors.LightGray
 )
 
 @Composable
-fun AppTheme(
-    content: @Composable () -> Unit
-) {
+fun AppTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = DarkColorScheme, // Force dark theme for pro video editor
+        colorScheme = CinemaCutColorScheme,
         typography = EditorTypography.EditorTypography,
         content = content
     )

@@ -66,6 +66,8 @@ fun VideoViewportSection(
     val media3Metrics by media3MetricsFlow.collectAsState()
     val automaticProxyRequests = remember(project.id) { mutableSetOf<String>() }
     val attemptedFfmpegFallbackAssets = remember(project.id) { mutableSetOf<String>() }
+    val attemptedProxyNoFrameFallbacks = remember(project.id) { mutableSetOf<String>() }
+    val attemptedDecoderNoFrameFallbacks = remember(project.id) { mutableSetOf<String>() }
     val latestIsPlaying by rememberUpdatedState(isPlaying)
 
     LaunchedEffect(project) {
@@ -183,7 +185,9 @@ fun VideoViewportSection(
         )
         val isFallbackEngine = engineType == com.example.timeline.engine.preview.PreviewEngineType.FFMPEG_NATIVE ||
             engineType == com.example.timeline.engine.preview.PreviewEngineType.VLC_NATIVE
-        val nativeFallbackWasAlreadyTried = asset?.assetId?.let(attemptedFfmpegFallbackAssets::contains) == true
+        val nativeFallbackWasAlreadyTried = asset?.assetId?.let { assetId ->
+            assetId in attemptedFfmpegFallbackAssets || assetId in attemptedDecoderNoFrameFallbacks
+        } == true
         when {
             shouldTryFfmpeg && asset != null -> {
                 attemptedFfmpegFallbackAssets += asset.assetId
@@ -205,6 +209,48 @@ fun VideoViewportSection(
     LaunchedEffect(
         timelinePreviewController,
         engineType,
+        currentProjectAsset?.assetId,
+        currentProjectAsset?.mimeType,
+        activeSourceIsProxy,
+        playerState,
+        firstFrameRendered,
+        previewSettings.autoFallbackOnFailure
+    ) {
+        val asset = currentProjectAsset ?: return@LaunchedEffect
+        if (!previewSettings.autoFallbackOnFailure ||
+            !asset.mimeType.startsWith("video/") || firstFrameRendered ||
+            playerState == com.example.timeline.engine.preview.PreviewState.ERROR
+        ) return@LaunchedEffect
+
+        val assetIdAtStart = asset.assetId
+        val engineAtStart = timelinePreviewController.previewEngine
+        kotlinx.coroutines.delay(4_000L)
+        if (
+            timelinePreviewController.activeAsset.value?.assetId != assetIdAtStart ||
+            timelinePreviewController.previewEngine !== engineAtStart ||
+            timelinePreviewController.previewEngine.firstFrameRendered.value ||
+            timelinePreviewController.previewEngine.currentState.value == com.example.timeline.engine.preview.PreviewState.ERROR
+        ) return@LaunchedEffect
+
+        if (timelinePreviewController.activeSourceIsProxy.value && attemptedProxyNoFrameFallbacks.add(assetIdAtStart)) {
+            if (com.example.BuildConfig.DEBUG) android.util.Log.w("VideoViewportSection", "Proxy produced no first frame; retrying the original source")
+            if (timelinePreviewController.fallbackFromProxy(assetIdAtStart)) {
+                timelineViewModel.markAssetProxyPlaybackFailed(assetIdAtStart)
+            }
+        } else if (
+            engineType == com.example.timeline.engine.preview.PreviewEngineType.MEDIA3_FALLBACK &&
+            attemptedDecoderNoFrameFallbacks.add(assetIdAtStart)
+        ) {
+            if (com.example.BuildConfig.DEBUG) android.util.Log.w("VideoViewportSection", "Media3 produced no first frame; trying LibVLC")
+            timelinePreviewController.setEngineType(com.example.timeline.engine.preview.PreviewEngineType.VLC_NATIVE)
+            editorViewModel.updateSelectedEngine(com.example.timeline.engine.preview.PreviewEngineType.VLC_NATIVE)
+            if (latestIsPlaying) timelinePreviewController.play()
+        }
+    }
+
+    LaunchedEffect(
+        timelinePreviewController,
+        engineType,
         currentAsset?.assetId,
         playerState,
         firstFrameRendered,
@@ -218,6 +264,7 @@ fun VideoViewportSection(
             previewSettings.autoFallbackOnFailure &&
             nativeFallbackEngine &&
             currentAsset?.mimeType?.startsWith("video/") == true &&
+            currentAsset?.assetId?.let { it !in attemptedDecoderNoFrameFallbacks } == true &&
             !firstFrameRendered &&
             playerState != com.example.timeline.engine.preview.PreviewState.ERROR
         ) {
@@ -252,7 +299,7 @@ fun VideoViewportSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "${project.name} | ${settings.resolutionWidth}x${settings.resolutionHeight} | ${settings.getFpsRational()}fps",
+                    text = "${settings.resolutionWidth}x${settings.resolutionHeight}  ·  ${settings.getFpsRational()}fps",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -292,6 +339,7 @@ fun VideoViewportSection(
                     playheadFrame = playheadFrame,
                     playerState = playerState,
                     playerError = playerError,
+                    firstFrameRendered = firstFrameRendered,
                     isSamplingColor = isSampling,
                     onColorSampled = onColorSampled,
                     timelineViewModel = timelineViewModel,

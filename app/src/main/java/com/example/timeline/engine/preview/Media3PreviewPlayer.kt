@@ -211,9 +211,11 @@ class Media3FallbackPreviewEngine(context: Context) : PreviewEngine {
             }
         })
 
-        // Avoid routing every frame through a GPU effect graph when no grade is active. This is
-        // especially important for high-resolution/HDR sources; live effects are attached lazily.
-        exoPlayer.setVideoEffects(emptyList())
+        // Leave plain playback on ExoPlayer's normal decoder/render path. Calling
+        // setVideoEffects(emptyList()) still installs Media3's effects/composition pipeline in
+        // current Media3 releases; seeking/replaying through that pipeline can throw
+        // "Replaying when enableReplayableCache is set to false" for imported local videos.
+        // Attach the GPU effect graph only when the user actually enables a preview effect.
     }
 
     private fun updateVideoEffects(uriString: String, mimeType: String?, params: VideoAdjustmentParams?) {
@@ -221,11 +223,15 @@ class Media3FallbackPreviewEngine(context: Context) : PreviewEngine {
         effectGraph.setParams(currentParams)
         val shouldActivate = (colorGradePreviewMode || currentParams.hasActivePreviewEffect()) &&
             effectFailureFallbackSource != uriString
-        if (shouldActivate == videoEffectsActive) return
+        if (!shouldActivate || videoEffectsActive) return
 
         try {
-            exoPlayer.setVideoEffects(if (shouldActivate) effectGraph.getEffects() else emptyList())
-            videoEffectsActive = shouldActivate
+            // Install the effect pipeline lazily, never an empty effects list. Media3 treats even
+            // setVideoEffects(emptyList()) as an effects pipeline and local-media seeks may then
+            // fail when its replayable cache is disabled. Once installed, just update the shader
+            // uniforms; do not switch the pipeline on/off while the item is prepared.
+            exoPlayer.setVideoEffects(effectGraph.getEffects())
+            videoEffectsActive = true
         } catch (error: Exception) {
             effectFailureFallbackSource = uriString
             videoEffectsActive = false
@@ -522,9 +528,9 @@ class Media3FallbackPreviewEngine(context: Context) : PreviewEngine {
         cancelPausedGradeRefresh()
         currentUri = null
         currentMimeType = null
-        videoEffectsActive = false
         effectFailureFallbackSource = null
-        runCatching { exoPlayer.setVideoEffects(emptyList()) }
+        // Keep the player pipeline unchanged between media items; see updateVideoEffects().
+        effectGraph.setParams(VideoAdjustmentParams.default())
         _currentError.value = null
         _currentPlaybackFailure.value = null
         _firstFrameRendered.value = false

@@ -23,6 +23,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
@@ -49,12 +50,11 @@ fun EditorScreen(
     val isSampling by colorAdjustmentViewModel.isEyedropperActive.collectAsState()
     var selectedTab by remember { mutableStateOf("Timeline") }
     var viewportWeight by rememberSaveable { mutableFloatStateOf(0.4f) }
-    val screenHeightDp = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
-    val screenHeightPx = with(androidx.compose.ui.platform.LocalDensity.current) {
-        screenHeightDp.toPx().coerceAtLeast(1f)
-    }
+    var editorHeightPx by remember { mutableFloatStateOf(1f) }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    Column(modifier = modifier.fillMaxSize().onGloballyPositioned { coordinates ->
+        editorHeightPx = coordinates.size.height.toFloat().coerceAtLeast(1f)
+    }) {
         PlaybackAwareVideoViewport(
             timelineUiState = timelineUiState,
             timelineViewModel = timelineViewModel,
@@ -77,7 +77,7 @@ fun EditorScreen(
                 .draggable(
                     orientation = Orientation.Vertical,
                     state = rememberDraggableState { delta ->
-                        viewportWeight = (viewportWeight + delta / screenHeightPx).coerceIn(0.24f, 0.76f)
+                        viewportWeight = (viewportWeight + delta / editorHeightPx).coerceIn(0.24f, 0.76f)
                     }
                 )
                 .semantics { contentDescription = "Drag up or down to resize the preview and timeline" },

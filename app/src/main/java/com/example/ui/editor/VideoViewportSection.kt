@@ -287,93 +287,71 @@ fun VideoViewportSection(
         }
     }
 
-    val aspectRatioFloat = settings.resolutionWidth.toFloat() / settings.resolutionHeight.toFloat()
+    val aspectRatioFloat = (settings.resolutionWidth.toFloat() / settings.resolutionHeight.toFloat())
+        .takeIf { it.isFinite() && it > 0f } ?: (16f / 9f)
 
-    Box(modifier = modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            
-            // 2. ViewportTitleRow (optional)
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "${settings.resolutionWidth}x${settings.resolutionHeight}  ·  ${settings.getFpsRational()}fps",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            BoxWithConstraints(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                val availableWidth = maxWidth
-                val screenHeight = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
-                // Leave room for the viewport title, transport controls and spacing. In landscape,
-                // the parent viewport can be shorter than the old hard-coded 180dp minimum.
-                val availableHeight = if (maxHeight != androidx.compose.ui.unit.Dp.Infinity && maxHeight > 0.dp) maxHeight else screenHeight
-                val canvasMaxHeight = (availableHeight - 72.dp).coerceAtLeast(64.dp)
-                    .coerceAtMost(420.dp)
-
-                val (canvasWidth, canvasHeight) = if (aspectRatioFloat > 1.0f) {
-                    val calculatedHeight = availableWidth / aspectRatioFloat
-                    val h = minOf(calculatedHeight, canvasMaxHeight, 280.dp)
-                    val w = minOf(availableWidth, h * aspectRatioFloat)
-                    Pair(w, h)
-                } else if (aspectRatioFloat < 1.0f) {
-                    val h = minOf(420.dp, availableHeight * 0.38f, canvasMaxHeight)
-                    val w = h * aspectRatioFloat
-                    Pair(w, h)
-                } else {
-                    val size = minOf(availableWidth, 320.dp, canvasMaxHeight)
-                    Pair(size, size)
-                }
-
-                CleanVideoCanvas(
-                    controller = timelinePreviewController,
-                    project = project,
-                    currentAsset = currentAsset,
-                    currentClip = currentClip,
-                    playheadFrame = playheadFrame,
-                    playerState = playerState,
-                    playerError = playerError,
-                    firstFrameRendered = firstFrameRendered,
-                    isSamplingColor = isSampling,
-                    onColorSampled = onColorSampled,
-                    timelineViewModel = timelineViewModel,
-                    showSafeArea = false,
-                    showGuideOverlay = false,
-                    modifier = Modifier.size(canvasWidth, canvasHeight)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-            ViewportControlBar(
-                isPlaying = isPlaying,
-                onTogglePlay = { timelineViewModel.togglePlay() },
-                timecodeText = com.example.timeline.core.FrameTimecode.frameToTimecode(
-                    playheadFrame,
-                    settings.getFpsRational().toFloat().toInt()
-                )
-            )
-            // Resolve status from the current project snapshot by active clip id so the viewport
-            // and Project Media do not briefly report different proxy states after an update.
-            ViewportStatusCard(
-                currentAsset = currentProjectAsset,
-                playerError = playerError,
-                engineType = engineType,
-                isProxySource = activeSourceIsProxy,
-                onRequestProxy = { timelineViewModel.generateProxy(it) },
-                onRequestRelink = onRelinkRequest,
-                onRetryPlayback = {
-                    timelinePreviewController.loadProject(project)
-                    timelinePreviewController.seekToTimelineFrame(project, playheadFrame)
-                    if (isPlaying) timelinePreviewController.play()
-                }
+    Column(modifier = modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().height(26.dp).padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "${settings.resolutionWidth} × ${settings.resolutionHeight}  ·  ${settings.getFpsRational()} fps",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
             )
         }
 
+        // Constrain the canvas from the actual remaining viewport bounds. The previous version
+        // used the device screen height when Column measured this child with an unbounded height,
+        // which made portrait projects exceed the resize pane and left a huge blank/error area.
+        BoxWithConstraints(
+            modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            val canvasHeight = minOf(maxHeight, maxWidth / aspectRatioFloat).coerceAtLeast(1.dp)
+            val canvasWidth = (canvasHeight * aspectRatioFloat).coerceAtMost(maxWidth)
+            CleanVideoCanvas(
+                controller = timelinePreviewController,
+                project = project,
+                currentAsset = currentAsset,
+                currentClip = currentClip,
+                playheadFrame = playheadFrame,
+                playerState = playerState,
+                playerError = playerError,
+                firstFrameRendered = firstFrameRendered,
+                isSamplingColor = isSampling,
+                onColorSampled = onColorSampled,
+                timelineViewModel = timelineViewModel,
+                showSafeArea = false,
+                showGuideOverlay = false,
+                modifier = Modifier.size(canvasWidth, canvasHeight)
+            )
+        }
+
+        ViewportControlBar(
+            isPlaying = isPlaying,
+            onTogglePlay = { timelineViewModel.togglePlay() },
+            timecodeText = com.example.timeline.core.FrameTimecode.frameToTimecode(
+                playheadFrame,
+                settings.getFpsRational().toFloat().toInt().coerceAtLeast(1)
+            ),
+            modifier = Modifier.height(46.dp)
+        )
+        ViewportStatusCard(
+            currentAsset = currentProjectAsset,
+            playerError = playerError,
+            engineType = engineType,
+            isProxySource = activeSourceIsProxy,
+            onRequestProxy = { timelineViewModel.generateProxy(it) },
+            onRequestRelink = onRelinkRequest,
+            onRetryPlayback = {
+                timelinePreviewController.loadProject(project)
+                timelinePreviewController.seekToTimelineFrame(project, playheadFrame)
+                if (isPlaying) timelinePreviewController.play()
+            },
+            modifier = Modifier.fillMaxWidth().heightIn(max = 34.dp)
+        )
     }
 }

@@ -148,3 +148,10 @@ Failed / root cause → rule: fallback previously handled native-to-Media3 only,
 Evidence: run 44721084836 passed `compileDebugKotlin`, `externalNativeBuildDebug`, full `testDebugUnitTest`, native export tests, FFmpeg output validation, license verification, and `assembleDebug`; release `android-test-95-1` is a 89,827,481-byte APK (SHA-256 `bb061dc34ef5b95d544af5783df335c9860bd9d52c8d3d899be12000f099cbf2`). Standalone `python3 tools/run_native_export_tests.py` passed too.
 Remaining: handset MOV codec/runtime remains UNVERIFIED; FFmpeg color-grade capability is limited, so this route is suppressed while the Color workspace is active.
 Next: user can test release `android-test-95-1`; continue tracing/repairing remaining preview-grade and Timeline issues source-side.
+
+## 2026-10-10 — Preview fallback error-key follow-up
+Done: keyed playback-error deduplication by asset, engine, message, and structured category so identical Media3 failures on different clips do not suppress fallback.
+Failed / root cause → rule: the old per-engine/message key could treat the same failure on a second asset as already handled; include source identity and error category in retry keys.
+Evidence: run 44722855604 passed Kotlin/native compilation, full JVM tests, native export tests, FFmpeg validation, and license checks. Workflow dispatch returned HTTP 403 (`Resource not accessible by integration`); a push marker is used for the final fresh APK build.
+Remaining: release #95 predates this small deduplication follow-up; all physical-device playback, grade, and Timeline behavior remain UNVERIFIED.
+Next: publish the current branch head through push-triggered CI, then provide the latest APK/checksum for the user's handset pass.

@@ -646,10 +646,9 @@ internal class McrawVideoTranscoder(private val context: Context) {
                     } && runCatching {
                         val capabilities = codecInfo.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC)
                         val video = capabilities.videoCapabilities ?: return@runCatching false
-                        val encoder = capabilities.encoderCapabilities ?: return@runCatching false
                         MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible in capabilities.colorFormats &&
                             video.areSizeAndRateSupported(width, height, frameRate.toDouble()) &&
-                            encoder.getBitrateRange().contains(bitrate)
+                            video.bitrateRange.contains(bitrate)
                     }.getOrDefault(false)
                 }
             }.getOrNull()

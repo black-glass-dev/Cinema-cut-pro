@@ -169,3 +169,10 @@ Failed / root cause → rule: compiler error was `FilmStripClipView.kt:78:18 Unr
 Evidence: failed workflow 44727832563 on `94a4d5f`; fix is source-only and not yet compiled.
 Remaining: rerun build/JVM/native/FFmpeg/release workflow; earlier workflow stopped at Kotlin/JVM compile and did not create APK.
 Next: commit/push this focused import fix and watch resulting CI before reporting any pass or APK availability.
+
+## 2026-10-10 — Timeline redesign CI verification
+Done: Kotlin/native compile, JVM tests, native C++ host tests, FFmpeg syntax/output validation all passed on `fa4702a` (workflow 44728680261).
+Failed / root cause → rule: APK build and publication were skipped because the fix commit did not contain the workflow's `[publish-test-release]` marker; workflow dispatch returned HTTP 403, so release must be requested by a marked commit on this branch.
+Evidence: https://github.com/black-glass-dev/Cinema-cut-pro/actions/runs/44728680261 — compile/JVM and native/FFmpeg steps PASS; APK steps SKIPPED.
+Remaining: no APK for this redesign yet; UI runtime and physical-phone comparison are UNVERIFIED and reserved for user handset testing.
+Next: use a tiny, accurate worklog-only marked commit to trigger the workflow's approved APK release, then verify release metadata and SHA-256.

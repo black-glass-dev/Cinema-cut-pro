@@ -216,3 +216,10 @@ Done: fixed the first CI compile miss (an explicit `TimelineFrameMath` import) i
 Evidence: run `44757248643` caught the omitted import before tests; run `44758484403` PASS for Kotlin/native compilation, JVM tests (including new two-MP4 and split/trim validation cases), native export tests, and FFmpeg checks; timeline host suite (170,624 assertions) and asset/XML integrity also PASS.
 Remaining: the push workflow intentionally skipped APK publication; physical-device gestures and real media import/export remain UNVERIFIED. Color grading stays deferred.
 Next: workflow-dispatch was denied (HTTP 403); request the approved debug APK through the documented marked-push path, then request handset checks for multi-video/export and timeline gestures.
+
+## 2026-10-10 — Test APK release workflow retry
+Done: core implementation and JVM/native regression gates passed on `44758484403`; attempted to produce a device-test package for the user.
+Failed / root cause → rule: workflow dispatch returned HTTP 403, and marked run `44759786572` stopped before source compilation because Gradle could not resolve KSP plugin `2.3.12`; Actions refused a rerun, so treat APK publication as blocked by tooling/dependency resolution, not app code.
+Evidence: `44758484403` PASS includes Kotlin/native compile, JVM tests, host export tests, and FFmpeg gates; no APK was produced by the failed release run.
+Remaining: no updated APK yet; real-device UI and MP4 imports/exports remain UNVERIFIED. Color grading remains deferred.
+Next: retry the approved release with a fresh marked push; if dependency resolution recovers, hand off that debug APK for handset validation.

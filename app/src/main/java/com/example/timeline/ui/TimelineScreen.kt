@@ -41,8 +41,9 @@ fun TimelineScreen(viewModel: TimelineViewModel, editorViewModel: com.example.ui
         return // handled in ChromaProApp
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF1F1F4))) {
         TimelineToolbar(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
             onImportClick = onImportClick,
             canUndo = uiState.canUndo,
             canRedo = uiState.canRedo,
@@ -55,9 +56,7 @@ fun TimelineScreen(viewModel: TimelineViewModel, editorViewModel: com.example.ui
             hasSelection = uiState.selectedClipId != null
         )
 
-        HorizontalDivider()
-
-        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+        Box(modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)) {
             CineTimelineCanvas(
                 onImportClick = onImportClick,
                 uiState = uiState,

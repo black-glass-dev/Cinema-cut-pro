@@ -1,28 +1,31 @@
 package com.example.timeline.ui
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.timeline.core.Rational
 import com.example.timeline.core.TimelineClip
 import com.example.timeline.media.MediaAsset
 
+/** Compact thumbnail-first clip block matching the portrait timeline reference. */
 @Composable
 fun FilmStripClipView(
     clip: TimelineClip,
@@ -31,20 +34,32 @@ fun FilmStripClipView(
     modifier: Modifier = Modifier,
     pixelsPerFrame: Float,
     scrollX: Float,
-    viewportWidth: Float
+    viewportWidth: Float,
+    frameRate: Rational
 ) {
-    val durationFrames = clip.timelineEnd - clip.timelineStart
-    val widthPx = durationFrames * pixelsPerFrame
-    val durationSec = durationFrames / 30f // Assumes 30fps for display
-    
-    val clipColor = if (clip.type == com.example.timeline.core.ClipType.MEDIA) Color(0xFF2B5B84) else Color(0xFF2E634A)
-    val borderColor = if (isSelected) Color(0xFFFFC107) else Color.Black.copy(alpha = 0.5f)
-    
+    val durationFrames = clip.duration.coerceAtLeast(0L)
+    val rawWidthPx = durationFrames.toDouble() * pixelsPerFrame.toDouble()
+    val widthPx = if (rawWidthPx.isFinite() && rawWidthPx > 0.0) {
+        rawWidthPx.coerceAtMost(Float.MAX_VALUE.toDouble()).toFloat()
+    } else {
+        0f
+    }
+    val widthDp = with(androidx.compose.ui.platform.LocalDensity.current) { widthPx.toDp() }
+    val durationSec = if (frameRate.numerator > 0 && frameRate.denominator > 0) {
+        durationFrames.toDouble() * frameRate.denominator.toDouble() / frameRate.numerator.toDouble()
+    } else {
+        0.0
+    }
+
+    val clipShape = RoundedCornerShape(6.dp)
+    val outline = if (isSelected) TimelineDesignTokens.Accent else Color(0xFF34353B)
     Box(
-        modifier = modifier.width(with(androidx.compose.ui.platform.LocalDensity.current) { widthPx.toDp() }).height(80.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(clipColor)
-            .border(if (isSelected) 2.dp else 1.dp, borderColor, RoundedCornerShape(8.dp))
+        modifier = modifier
+            .width(widthDp)
+            .height(TimelineDesignTokens.TrackHeight)
+            .clip(clipShape)
+            .background(TimelineDesignTokens.Clip)
+            .border(if (isSelected) 1.5.dp else 0.75.dp, outline, clipShape)
     ) {
         if (mediaAsset != null && clip.type == com.example.timeline.core.ClipType.MEDIA) {
             FilmStripThumbnailRow(
@@ -56,102 +71,54 @@ fun FilmStripClipView(
                 modifier = Modifier.fillMaxSize()
             )
         }
-        
-        // Draw sprocket holes and frame divisions
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val h = size.height
-            val w = size.width
-            
-            if (clip.type == com.example.timeline.core.ClipType.MEDIA) {
-                // Top and bottom sprocket bands
-                val bandHeight = 12f
-                drawRect(color = Color.Black.copy(alpha = 0.6f), topLeft = Offset(0f, 0f), size = Size(w, bandHeight))
-                drawRect(color = Color.Black.copy(alpha = 0.6f), topLeft = Offset(0f, h - bandHeight), size = Size(w, bandHeight))
-                
-                // Sprocket holes
-                val holeWidth = 6f
-                val holeHeight = 6f
-                val holeSpacing = 20f
-                var x = 5f
-                while (x < w) {
-                    drawRoundRect(Color.Black, topLeft = Offset(x, 3f), size = Size(holeWidth, holeHeight), cornerRadius = CornerRadius(2f))
-                    drawRoundRect(Color.Black, topLeft = Offset(x, h - bandHeight + 3f), size = Size(holeWidth, holeHeight), cornerRadius = CornerRadius(2f))
-                    x += holeSpacing
-                }
-                
-                // Frames
-                val frameWidth = h * 1.5f
-                var fx = frameWidth
-                while (fx < w) {
-                    drawLine(
-                        color = Color.Black.copy(alpha = 0.8f),
-                        start = Offset(fx, bandHeight),
-                        end = Offset(fx, h - bandHeight),
-                        strokeWidth = 2f
-                    )
-                    fx += frameWidth
-                }
-            } else {
-                // Audio waveform abstract representation
-                val midY = h / 2f
-                val step = 10f
-                var ax = 5f
-                while (ax < w) {
-                    val amp = (Math.random() * (h * 0.6)).toFloat()
-                    drawLine(
-                        color = Color.White.copy(alpha = 0.3f),
-                        start = Offset(ax, midY - amp / 2),
-                        end = Offset(ax, midY + amp / 2),
-                        strokeWidth = 3f
-                    )
-                    ax += step
-                }
-            }
-        }
-        
-        // Text overlay
+
         Column(
             modifier = Modifier
-                .padding(horizontal = 8.dp, vertical = 14.dp)
-                .fillMaxWidth(),
-            verticalArrangement = Arrangement.Center
+                .align(Alignment.TopStart)
+                .fillMaxWidth()
+                .padding(start = 8.dp, end = 18.dp, top = 5.dp)
         ) {
             Text(
-                text = clip.name,
+                text = mediaAsset?.displayName ?: clip.name,
                 color = Color.White,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = String.format("%.1fs", durationSec),
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = 10.sp,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
-        
-        // Trim Handles if selected
+        Text(
+            text = String.format("%.1fs", durationSec),
+            color = Color.White.copy(alpha = 0.9f),
+            fontSize = 9.sp,
+            maxLines = 1,
+            modifier = Modifier.align(Alignment.BottomStart).padding(start = 8.dp, bottom = 4.dp)
+        )
+
         if (isSelected) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .width(16.dp)
-                    .fillMaxHeight()
-                    .background(Color(0x88FFC107))
-            ) {
-                Box(modifier = Modifier.align(Alignment.Center).width(4.dp).height(24.dp).background(Color.White))
-            }
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .width(16.dp)
-                    .fillMaxHeight()
-                    .background(Color(0x88FFC107))
-            ) {
-                Box(modifier = Modifier.align(Alignment.Center).width(4.dp).height(24.dp).background(Color.White))
+            listOf(Alignment.CenterStart, Alignment.CenterEnd).forEach { alignment ->
+                Box(
+                    modifier = Modifier
+                        .align(alignment)
+                        .width(10.dp)
+                        .fillMaxHeight()
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .width(2.dp)
+                            .height(22.dp)
+                            .background(Color.White.copy(alpha = 0.9f), RoundedCornerShape(2.dp))
+                    )
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .width(8.dp)
+                            .height(8.dp)
+                            .background(TimelineDesignTokens.Accent, CircleShape)
+                            .border(1.dp, Color.White, CircleShape)
+                    )
+                }
             }
         }
     }

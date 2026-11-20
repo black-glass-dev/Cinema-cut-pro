@@ -22,7 +22,7 @@ fun TimelineRulerView(
     Canvas(modifier = modifier.fillMaxSize()) {
         val width = size.width
         val height = size.height
-        drawRect(color = Color(0xFF141414))
+        drawRect(color = TimelineDesignTokens.Ruler)
         drawRect(
             color = Color.White.copy(alpha = 0.1f),
             topLeft = Offset(0f, height - 1f),

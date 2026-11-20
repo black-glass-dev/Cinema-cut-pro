@@ -155,3 +155,10 @@ Failed / root cause → rule: the old per-engine/message key could treat the sam
 Evidence: run 44723887294 on `812ba7a` passed Kotlin/native compilation, full JVM tests, native export tests, FFmpeg validation, license checks, APK assembly, and release publication. Fresh release `android-test-97-1`: `Cinema-Cut-Pro-debug-97-1.apk`, 89,827,481 bytes, SHA-256 `769b79aaaeb80b143a1a68bf3534b03a5ecd13dd51f7fe0d843671c2d368825b`.
 Remaining: all physical-device playback, grade, and Timeline behavior remain UNVERIFIED.
 Next: continue source-side diagnosis/fixes for the remaining preview-grade, nodes/LUT/history/export usability issues; the user may run the handset checklist independently.
+
+## 2026-10-10 — Portrait Timeline redesign from retained screenshot (CI pending)
+Done: preserved the supplied screenshot in `docs/design-reference/`; moved editor tabs beneath the work area; restyled the toolbar, track ruler/labels, filmstrip clip, selected trim grips, and playhead to match the black/red reference while retaining Core v2 gestures and scrub line.
+Failed / root cause → rule: the existing view used a blue/sprocket clip card, yellow selection and tabs above the timeline; adopt the reference's thumbnail-first red-selected clip, dark track surfaces, compact controls and bottom tabs without changing edit authority.
+Evidence: source-level review and `git diff --check` only; Android/JVM compile, screenshot rendering and handset comparison remain pending. Screenshot preserved as a 2 MB repo asset.
+Remaining: visual rendering, touch-target feel, and scrubbing/trim behavior on a physical phone remain UNVERIFIED; CI compilation is required before handoff.
+Next: run the existing Android/JVM + native CI workflow, resolve any compile/test findings, then publish an installable APK and compare it on the user's handset against the preserved reference.

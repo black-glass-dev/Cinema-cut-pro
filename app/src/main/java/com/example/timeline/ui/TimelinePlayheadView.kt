@@ -27,7 +27,7 @@ fun TimelinePlayheadView(
         
         // Vertical line
         drawLine(
-            color = Color.Red,
+            color = TimelineDesignTokens.Accent,
             start = Offset(centerX, 0f),
             end = Offset(centerX, h),
             strokeWidth = 3f
@@ -42,6 +42,6 @@ fun TimelinePlayheadView(
             lineTo(0f, 15f)
             close()
         }
-        drawPath(path, Color.Red)
+        drawPath(path, TimelineDesignTokens.Accent)
     }
 }

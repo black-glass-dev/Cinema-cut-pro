@@ -11,6 +11,8 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
 import com.example.timeline.core.CoreV2EditCommand
 import com.example.timeline.core.CoreV2EditOutcome
 import com.example.timeline.core.TimelineCoreV2Adapter
@@ -69,8 +71,10 @@ fun CineTimelineCanvas(
     var renameText by remember { mutableStateOf("") }
     
     val pixelsPerFrame = uiState.pixelsPerFrame
-    val trackHeight = 80f
-    val trackPadding = 12f
+    val trackHeightDp = TimelineDesignTokens.TrackHeight
+    val trackPaddingDp = TimelineDesignTokens.TrackGap
+    val trackHeight = with(androidx.compose.ui.platform.LocalDensity.current) { trackHeightDp.toPx() }
+    val trackPadding = with(androidx.compose.ui.platform.LocalDensity.current) { trackPaddingDp.toPx() }
     val contextMenuLockTarget = remember(uiState.project, contextMenuClipId) {
         contextMenuClipId?.let { TimelineGroupLockController.targetFor(uiState.project, it) }
     }
@@ -123,15 +127,16 @@ fun CineTimelineCanvas(
         modifier = modifier
             .fillMaxSize()
             .clipToBounds()
-            .background(Color(0xFF0A0A0A))
+            .background(TimelineDesignTokens.Pane)
             .transformable(transformableState)
     ) {
         val viewportWidth = constraints.maxWidth
-        val trackHeaderWidth = if (uiState.project.tracks.isNotEmpty()) 80.dp else 0.dp
+        val trackHeaderWidth = if (uiState.project.tracks.isNotEmpty()) TimelineDesignTokens.TrackHeaderWidth else 0.dp
         val trackHeaderWidthPx = with(androidx.compose.ui.platform.LocalDensity.current) { trackHeaderWidth.toPx() }
         val timelineViewportWidth = (viewportWidth - trackHeaderWidthPx).coerceAtLeast(0f)
         val centerX = timelineViewportWidth / 2f
-        val rulerHeightPx = with(androidx.compose.ui.platform.LocalDensity.current) { 40.dp.toPx() }
+        val rulerHeightDp = TimelineDesignTokens.RulerHeight
+        val rulerHeightPx = with(androidx.compose.ui.platform.LocalDensity.current) { rulerHeightDp.toPx() }
         val renderProject = dragPreviewProject ?: uiState.project
         val contentHeightPx = rulerHeightPx +
             renderProject.tracks.size * (trackHeight + trackPadding)
@@ -176,24 +181,45 @@ fun CineTimelineCanvas(
             if (uiState.project.tracks.isNotEmpty()) {
                 Column(
                     modifier = Modifier
-                        .width(80.dp)
+                        .width(trackHeaderWidth)
                         .fillMaxHeight()
-                        .background(Color(0xFF1E1E1E))
-                        .padding(top = 40.dp)
-                        .offset(y = with(androidx.compose.ui.platform.LocalDensity.current) { (-scrollY).toDp() })
+                        .background(TimelineDesignTokens.TrackHeader)
                 ) {
-                    uiState.project.tracks.forEachIndexed { index, track ->
-                        LayerHeaderView(
-                            track = track,
-                            trackIndex = index,
-                            onRename = { trackToRename = track; renameText = track.name },
-                            onDelete = { onDeleteTrack(track.id) },
-                            onMoveUp = { onMoveTrack(track.id, index - 1) },
-                            onMoveDown = { onMoveTrack(track.id, index + 1) },
-                            modifier = Modifier
-                                .height(with(androidx.compose.ui.platform.LocalDensity.current) { (trackHeight + trackPadding).toDp() })
-                                .padding(bottom = with(androidx.compose.ui.platform.LocalDensity.current) { trackPadding.toDp() })
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(rulerHeightDp)
+                            .background(TimelineDesignTokens.Ruler)
+                            .padding(start = 10.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Text(
+                            text = "TRACKS",
+                            color = Color(0xFF82828A),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 1.sp
                         )
+                    }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .offset(y = with(androidx.compose.ui.platform.LocalDensity.current) { (-scrollY).toDp() })
+                    ) {
+                        uiState.project.tracks.forEachIndexed { index, track ->
+                            LayerHeaderView(
+                                track = track,
+                                trackIndex = index,
+                                onRename = { trackToRename = track; renameText = track.name },
+                                onDelete = { onDeleteTrack(track.id) },
+                                onMoveUp = { onMoveTrack(track.id, index - 1) },
+                                onMoveDown = { onMoveTrack(track.id, index + 1) },
+                                modifier = Modifier
+                                    .height(trackHeightDp + trackPaddingDp)
+                                    .padding(bottom = trackPaddingDp)
+                            )
+                        }
                     }
                 }
             }
@@ -208,8 +234,8 @@ fun CineTimelineCanvas(
                         detectTapGestures(
                             onLongPress = { offset ->
                                 val tapX = offset.x + scrollX
-                                val tapY = offset.y + scrollY - 40.dp.toPx()
-                                val hitClip = TimelineGestureController.hitTest(tapX, tapY, uiState.project, pixelsPerFrame)
+                                val tapY = offset.y + scrollY - rulerHeightPx
+                                val hitClip = TimelineGestureController.hitTest(tapX, tapY, uiState.project, pixelsPerFrame, trackHeight, trackPadding)
                                 if (hitClip != null) {
                                     onClipSelected(hitClip.id)
                                     contextMenuClipId = hitClip.id
@@ -221,8 +247,8 @@ fun CineTimelineCanvas(
                                 contextMenuVisible = false
                                 contextMenuClipId = null
                                 val tapX = offset.x + scrollX
-                                val tapY = offset.y + scrollY - 40.dp.toPx()
-                                val hitClip = TimelineGestureController.hitTest(tapX, tapY, uiState.project, pixelsPerFrame)
+                                val tapY = offset.y + scrollY - rulerHeightPx
+                                val hitClip = TimelineGestureController.hitTest(tapX, tapY, uiState.project, pixelsPerFrame, trackHeight, trackPadding)
                                 onClipSelected(hitClip?.id)
                                 
                                 if (hitClip == null) {
@@ -244,12 +270,14 @@ fun CineTimelineCanvas(
                                     startOffset = offset,
                                     scrollX = scrollX,
                                     scrollY = scrollY,
-                                    rulerHeightPx = 40.dp.toPx(),
+                                    rulerHeightPx = rulerHeightPx,
                                     project = uiState.project,
                                     pixelsPerFrame = pixelsPerFrame,
                                     selectedClipId = uiState.selectedClipId,
                                     playheadFrame = playheadFrameFlow.value,
-                                    playheadHitRadiusPx = 24.dp.toPx()
+                                    playheadHitRadiusPx = 24.dp.toPx(),
+                                    trackHeightPx = trackHeight,
+                                    trackPaddingPx = trackPadding
                                 )
                                 when (val action = dragAction) {
                                     is TimelineDragAction.MoveClip -> dragGhostStartFrame = action.clip.timelineStart
@@ -367,10 +395,10 @@ fun CineTimelineCanvas(
                 // Scrollable container for tracks
                 Box(modifier = Modifier.fillMaxSize().offset(y = with(androidx.compose.ui.platform.LocalDensity.current) { (-scrollY).toDp() })) {
                     // Track backgrounds
-                    Column(modifier = Modifier.fillMaxWidth().padding(top = 40.dp)) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(top = rulerHeightDp)) {
                         uiState.project.tracks.forEach {
-                            Box(modifier = Modifier.fillMaxWidth().height(with(androidx.compose.ui.platform.LocalDensity.current) { trackHeight.toDp() }).background(Color(0xFF141414)))
-                            Spacer(modifier = Modifier.height(with(androidx.compose.ui.platform.LocalDensity.current) { trackPadding.toDp() }))
+                            Box(modifier = Modifier.fillMaxWidth().height(trackHeightDp).background(TimelineDesignTokens.Track))
+                            Spacer(modifier = Modifier.height(trackPaddingDp))
                         }
                     }
                     
@@ -388,6 +416,7 @@ fun CineTimelineCanvas(
                                         pixelsPerFrame = pixelsPerFrame,
                                         scrollX = scrollX,
                                         viewportWidth = timelineViewportWidth,
+                                        frameRate = uiState.project.settings.getFpsRational(),
                                         modifier = Modifier
                                     )
                             }
@@ -432,7 +461,7 @@ fun CineTimelineCanvas(
                 }
                 
                 // Fixed top overlay for Ruler
-                Box(modifier = Modifier.fillMaxWidth().height(40.dp).padding(start = trackHeaderWidth)) {
+                Box(modifier = Modifier.fillMaxWidth().height(rulerHeightDp).padding(start = trackHeaderWidth)) {
                     TimelineRulerView(scrollX, timelineViewportWidth.toInt(), pixelsPerFrame, uiState.project.settings.getFpsRational())
                 }
                 

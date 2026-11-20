@@ -1,6 +1,7 @@
 package com.example.timeline.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -42,7 +43,8 @@ fun LayerHeaderView(
         modifier = modifier
             .fillMaxWidth()
             .fillMaxHeight()
-            .background(Color(0xFF1E1E1E))
+            .background(TimelineDesignTokens.TrackHeader)
+            .border(0.5.dp, TimelineDesignTokens.Divider)
             .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween

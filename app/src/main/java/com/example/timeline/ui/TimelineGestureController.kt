@@ -50,7 +50,9 @@ object TimelineGestureController {
         pixelsPerFrame: Float,
         selectedClipId: String?,
         playheadFrame: Long = 0L,
-        playheadHitRadiusPx: Float = 24f
+        playheadHitRadiusPx: Float = 24f,
+        trackHeightPx: Float = 80f,
+        trackPaddingPx: Float = 12f
     ): TimelineDragAction {
         val playheadX = TimelineUiGeometry.frameToX(playheadFrame, pixelsPerFrame) - scrollX
         if (startOffset.y < rulerHeightPx ||
@@ -61,7 +63,7 @@ object TimelineGestureController {
 
         val tapX = startOffset.x + scrollX
         val tapY = startOffset.y + scrollY - rulerHeightPx
-        val hitClip = hitTest(tapX, tapY, project, pixelsPerFrame)
+        val hitClip = hitTest(tapX, tapY, project, pixelsPerFrame, trackHeightPx, trackPaddingPx)
         if (!TimelineCoreV2Adapter.isAvailable()) return TimelineDragAction.Pan(scrollX, scrollY)
         if (hitClip == null) return TimelineDragAction.Pan(scrollX, scrollY)
 

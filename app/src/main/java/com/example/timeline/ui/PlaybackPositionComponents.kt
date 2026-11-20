@@ -22,7 +22,7 @@ internal fun TimelinePlayheadIndicator(
     pixelsPerFrame: Float,
     scrollX: Float,
     frameToX: (Long, Float) -> Float,
-    top: Dp = 40.dp,
+    top: Dp = 0.dp,
     startOffset: Dp = 0.dp
 ) {
     val playheadFrame by playheadFrameFlow.collectAsState()

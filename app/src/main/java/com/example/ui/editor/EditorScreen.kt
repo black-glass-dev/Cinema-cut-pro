@@ -81,11 +81,6 @@ fun EditorScreen(
             )
         }
 
-        EditorToolTabs(
-            selectedTab = selectedTab,
-            onTabSelected = { selectedTab = it }
-        )
-
         EditorBottomPanel(
             selectedTab = selectedTab,
             timelineViewModel = timelineViewModel,
@@ -98,6 +93,11 @@ fun EditorScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f - viewportWeight)
+        )
+
+        EditorToolTabs(
+            selectedTab = selectedTab,
+            onTabSelected = { selectedTab = it }
         )
     }
 }

@@ -32,7 +32,7 @@ fun FilmStripThumbnailRow(
     val context = LocalContext.current
     val density = LocalDensity.current
     
-    val heightPx = with(density) { 56.dp.toPx() }
+    val heightPx = with(density) { 60.dp.toPx() }
     val isQuarterTurn = mediaAsset.metadata.rotationDegrees % 180 != 0
     val displayWidth = (if (isQuarterTurn) mediaAsset.metadata.height else mediaAsset.metadata.width).coerceAtLeast(1)
     val displayHeight = (if (isQuarterTurn) mediaAsset.metadata.width else mediaAsset.metadata.height).coerceAtLeast(1)
@@ -93,7 +93,7 @@ fun FilmStripThumbnailRow(
         }
     }
 
-    Box(modifier = modifier.fillMaxSize().padding(vertical = 12.dp)) {
+    Box(modifier = modifier.fillMaxSize().padding(vertical = 2.dp)) {
         thumbnailPlans.forEach { plan ->
             val isVisible = plan.startX < localVisibleEnd && (plan.startX + plan.width) > localVisibleStart
             if (isVisible) {
@@ -108,7 +108,7 @@ fun FilmStripThumbnailRow(
         }
         
         // Dark overlay for text readability
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)))
+        Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.18f)))
     }
 }
 

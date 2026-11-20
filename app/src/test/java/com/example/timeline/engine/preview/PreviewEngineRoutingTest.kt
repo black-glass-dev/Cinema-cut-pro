@@ -35,6 +35,15 @@ class PreviewEngineRoutingTest {
     }
 
     @Test
+    fun pausedScrubbingSeeksAtFrameCadenceAndCoalescesSubFrameNoise() {
+        assertEquals(true, shouldSeekPreviewPosition(positionDeltaMs = 17L, isPlaying = false, forceSeek = false))
+        assertEquals(false, shouldSeekPreviewPosition(positionDeltaMs = 8L, isPlaying = false, forceSeek = false))
+        assertEquals(false, shouldSeekPreviewPosition(positionDeltaMs = 100L, isPlaying = true, forceSeek = false))
+        assertEquals(true, shouldSeekPreviewPosition(positionDeltaMs = 301L, isPlaying = true, forceSeek = false))
+        assertEquals(true, shouldSeekPreviewPosition(positionDeltaMs = 0L, isPlaying = true, forceSeek = true))
+    }
+
+    @Test
     fun liveGradeFallbackUsesTheRequestedEngineNotTheTemporaryActiveEngine() {
         assertEquals(true, requiresMedia3ForLiveGrade(PreviewEngineType.VLC_NATIVE, isMotionCamRaw = false))
         assertEquals(true, requiresMedia3ForLiveGrade(PreviewEngineType.FFMPEG_NATIVE, isMotionCamRaw = false))

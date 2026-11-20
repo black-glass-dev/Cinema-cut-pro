@@ -127,7 +127,10 @@ fun CineTimelineCanvas(
             .transformable(transformableState)
     ) {
         val viewportWidth = constraints.maxWidth
-        val centerX = viewportWidth / 2f
+        val trackHeaderWidth = if (uiState.project.tracks.isNotEmpty()) 80.dp else 0.dp
+        val trackHeaderWidthPx = with(androidx.compose.ui.platform.LocalDensity.current) { trackHeaderWidth.toPx() }
+        val timelineViewportWidth = (viewportWidth - trackHeaderWidthPx).coerceAtLeast(0f)
+        val centerX = timelineViewportWidth / 2f
         val rulerHeightPx = with(androidx.compose.ui.platform.LocalDensity.current) { 40.dp.toPx() }
         val renderProject = dragPreviewProject ?: uiState.project
         val contentHeightPx = rulerHeightPx +
@@ -140,7 +143,7 @@ fun CineTimelineCanvas(
                 project = renderProject,
                 scrollX = scrollX,
                 scrollY = scrollY,
-                viewportWidthPx = viewportWidth.toFloat(),
+                viewportWidthPx = timelineViewportWidth,
                 viewportHeightPx = constraints.maxHeight.toFloat(),
                 pixelsPerFrame = pixelsPerFrame,
                 trackHeightPx = trackHeight,
@@ -224,7 +227,7 @@ fun CineTimelineCanvas(
                                 
                                 if (hitClip == null) {
                                     val frame = TimelineUiGeometry.xToFrame(tapX, pixelsPerFrame)
-                                    onPlayheadMoved(max(0, frame))
+                                    onPlayheadMoved(TimelineUiGeometry.clampPlayheadFrame(uiState.project, frame))
                                 }
                             }
                         )
@@ -244,7 +247,9 @@ fun CineTimelineCanvas(
                                     rulerHeightPx = 40.dp.toPx(),
                                     project = uiState.project,
                                     pixelsPerFrame = pixelsPerFrame,
-                                    selectedClipId = uiState.selectedClipId
+                                    selectedClipId = uiState.selectedClipId,
+                                    playheadFrame = playheadFrameFlow.value,
+                                    playheadHitRadiusPx = 24.dp.toPx()
                                 )
                                 when (val action = dragAction) {
                                     is TimelineDragAction.MoveClip -> dragGhostStartFrame = action.clip.timelineStart
@@ -272,7 +277,7 @@ fun CineTimelineCanvas(
                                     }
                                     is TimelineDragAction.ScrubPlayhead -> {
                                         val frame = TimelineUiGeometry.xToFrame(change.position.x + scrollX, pixelsPerFrame)
-                                        onPlayheadMoved(max(0, frame))
+                                        onPlayheadMoved(TimelineUiGeometry.clampPlayheadFrame(uiState.project, frame))
                                     }
                                     is TimelineDragAction.MoveClip -> {
                                         val currentX = change.position.x + scrollX
@@ -382,7 +387,7 @@ fun CineTimelineCanvas(
                                         isSelected = uiState.selectedClipId == clip.id,
                                         pixelsPerFrame = pixelsPerFrame,
                                         scrollX = scrollX,
-                                        viewportWidth = viewportWidth.toFloat(),
+                                        viewportWidth = timelineViewportWidth,
                                         modifier = Modifier
                                     )
                             }
@@ -427,8 +432,8 @@ fun CineTimelineCanvas(
                 }
                 
                 // Fixed top overlay for Ruler
-                Box(modifier = Modifier.fillMaxWidth().height(40.dp)) {
-                    TimelineRulerView(scrollX, viewportWidth, pixelsPerFrame, uiState.project.settings.getFpsRational())
+                Box(modifier = Modifier.fillMaxWidth().height(40.dp).padding(start = trackHeaderWidth)) {
+                    TimelineRulerView(scrollX, timelineViewportWidth.toInt(), pixelsPerFrame, uiState.project.settings.getFpsRational())
                 }
                 
                 // The playhead indicator observes only its own flow; clip layouts stay stable.
@@ -436,7 +441,8 @@ fun CineTimelineCanvas(
                     playheadFrameFlow = playheadFrameFlow,
                     pixelsPerFrame = pixelsPerFrame,
                     scrollX = scrollX,
-                    frameToX = TimelineUiGeometry::frameToX
+                    frameToX = TimelineUiGeometry::frameToX,
+                    startOffset = trackHeaderWidth
                 )
             }
         }

@@ -1,5 +1,6 @@
 package com.example.timeline.ui
 
+import com.example.timeline.core.TimelineProject
 import kotlin.math.floor
 
 /** Presentation-only frame/pixel conversion. Timeline model and edit math remain integer/native. */
@@ -16,5 +17,14 @@ object TimelineUiGeometry {
         if (value >= Long.MAX_VALUE.toDouble()) return Long.MAX_VALUE
         if (value <= Long.MIN_VALUE.toDouble()) return Long.MIN_VALUE
         return floor(value + 0.5).toLong()
+    }
+
+    /** Scrubbing is navigation, not a Core v2 edit; keep it inside the represented sequence. */
+    fun clampPlayheadFrame(project: TimelineProject, frame: Long): Long {
+        val sequenceEnd = project.tracks.asSequence()
+            .flatMap { it.clips.asSequence() }
+            .maxOfOrNull { it.timelineEnd }
+            ?: 0L
+        return frame.coerceIn(0L, sequenceEnd)
     }
 }

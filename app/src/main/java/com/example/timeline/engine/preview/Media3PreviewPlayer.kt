@@ -452,8 +452,11 @@ class Media3FallbackPreviewEngine(context: Context) : PreviewEngine {
             val positionDeltaMs = kotlin.math.abs(exoPlayer.currentPosition - safePositionMs)
             // Project/grade state can change many times per second while playing. Only seek for
             // a real playhead jump then; routine slider updates just replace shader uniforms.
-            val seekThresholdMs = if (isPlaying) 300L else 80L
-            val positionNeedsSeek = forceSeek || positionDeltaMs > seekThresholdMs
+            val positionNeedsSeek = shouldSeekPreviewPosition(
+                positionDeltaMs = positionDeltaMs,
+                isPlaying = isPlaying,
+                forceSeek = forceSeek
+            )
             val needsPausedGradeRefresh = !isPlaying && evaluatedParams != null
             if (positionNeedsSeek) {
                 cancelPausedGradeRefresh()

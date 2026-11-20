@@ -46,6 +46,38 @@ class TimelineGestureControllerTest {
     }
 
     @Test
+    fun draggingVisiblePlayheadLineOverAClipStartsScrubbingNotClipEditing() {
+        val clip = TimelineClip(
+            id = "clip",
+            trackId = "video-track",
+            mediaId = "media",
+            name = "clip.mp4",
+            sourceIn = 0L,
+            sourceOut = 100L,
+            timelineStart = 0L
+        )
+        val project = TimelineProject(
+            id = "project",
+            settings = ProjectSettings(projectId = "project", projectName = "Test project"),
+            tracks = listOf(TimelineTrack("video-track", "Video 1", TrackType.VIDEO, clips = listOf(clip)))
+        )
+
+        val action = TimelineGestureController.determineDragAction(
+            startOffset = Offset(x = 44f, y = 60f),
+            scrollX = 0f,
+            scrollY = 0f,
+            rulerHeightPx = 40f,
+            project = project,
+            pixelsPerFrame = 2f,
+            selectedClipId = clip.id,
+            playheadFrame = 20L,
+            playheadHitRadiusPx = 8f
+        )
+
+        assertTrue("the visible playhead hit target must win over the clip underneath", action is TimelineDragAction.ScrubPlayhead)
+    }
+
+    @Test
     fun testINV15_SnapDoesNotUseKotlinFallbackWhenNativeCoreIsUnavailable() {
         NativeTimelineCoreV2.markUnavailable()
         val clip = TimelineClip(

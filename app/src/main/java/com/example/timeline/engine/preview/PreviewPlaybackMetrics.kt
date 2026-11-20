@@ -38,5 +38,16 @@ internal fun shouldGenerateAdaptiveProxy(
         metrics.droppedFramesInLastReport >= MIN_DROPPED_FRAMES_PER_WINDOW
 }
 
+internal fun shouldSeekPreviewPosition(
+    positionDeltaMs: Long,
+    isPlaying: Boolean,
+    forceSeek: Boolean
+): Boolean {
+    if (forceSeek) return true
+    // While paused, retain frame-level scrub response without issuing seeks for sub-frame noise.
+    val thresholdMs = if (isPlaying) 300L else 12L
+    return positionDeltaMs > thresholdMs
+}
+
 private const val MIN_DROPPED_FRAME_WINDOW_MS = 500L
 private const val MIN_DROPPED_FRAMES_PER_WINDOW = 5L

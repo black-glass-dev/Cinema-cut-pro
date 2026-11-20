@@ -36,9 +36,15 @@ object AdvancedTimelineGestureController {
         rulerHeightPx: Float,
         project: TimelineProject,
         pixelsPerFrame: Float,
-        selectedClipIds: Set<String>
+        selectedClipIds: Set<String>,
+        playheadFrame: Long = 0L,
+        playheadHitRadiusPx: Float = 24f
     ): TimelineDragAction {
-        if (startOffset.y < rulerHeightPx) return TimelineDragAction.ScrubPlayhead
+        val playheadX = TimelineUiGeometry.frameToX(playheadFrame, pixelsPerFrame) - scrollX
+        if (startOffset.y < rulerHeightPx ||
+            (playheadHitRadiusPx.isFinite() && playheadHitRadiusPx >= 0f &&
+                startOffset.x.isFinite() && kotlin.math.abs(startOffset.x - playheadX) <= playheadHitRadiusPx)
+        ) return TimelineDragAction.ScrubPlayhead
         if (!TimelineCoreV2Adapter.isAvailable()) return TimelineDragAction.Pan(scrollX, scrollY)
 
         val tapX = startOffset.x + scrollX

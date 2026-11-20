@@ -22,13 +22,14 @@ internal fun TimelinePlayheadIndicator(
     pixelsPerFrame: Float,
     scrollX: Float,
     frameToX: (Long, Float) -> Float,
-    top: Dp = 40.dp
+    top: Dp = 40.dp,
+    startOffset: Dp = 0.dp
 ) {
     val playheadFrame by playheadFrameFlow.collectAsState()
     val playheadX = with(LocalDensity.current) {
         (frameToX(playheadFrame, pixelsPerFrame) - scrollX).toDp()
     }
-    TimelinePlayheadView(modifier = Modifier.offset(x = playheadX, y = top))
+    TimelinePlayheadView(modifier = Modifier.offset(x = startOffset + playheadX, y = top))
 }
 
 /** Keeps follow-playhead scrolling live without making the canvas composition observe each tick. */

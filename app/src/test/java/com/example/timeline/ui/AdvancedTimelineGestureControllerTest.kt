@@ -52,6 +52,25 @@ class AdvancedTimelineGestureControllerTest {
     }
 
     @Test
+    fun visiblePlayheadDragWinsOverClipEditInAdvancedTimeline() {
+        val (project, clip) = projectWithClip(startFrame = 0L)
+
+        val action = AdvancedTimelineGestureController.determineDragAction(
+            startOffset = Offset(x = 42f, y = 80f),
+            scrollX = 0f,
+            scrollY = 0f,
+            rulerHeightPx = 40f,
+            project = project,
+            pixelsPerFrame = 2f,
+            selectedClipIds = setOf(clip.id),
+            playheadFrame = 20L,
+            playheadHitRadiusPx = 8f
+        )
+
+        assertTrue(action is TimelineDragAction.ScrubPlayhead)
+    }
+
+    @Test
     fun snappingRejectsWithoutNativeCoreInsteadOfUsingKotlinMirror() {
         NativeTimelineCoreV2.markUnavailable()
         val (project, _) = projectWithClip(startFrame = 100L)

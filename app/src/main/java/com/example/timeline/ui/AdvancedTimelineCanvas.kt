@@ -144,7 +144,10 @@ fun AdvancedTimelineCanvas(
             .transformable(transformableState)
     ) {
         val viewportWidth = constraints.maxWidth
-        val centerX = viewportWidth / 2f
+        val trackHeaderWidth = if (uiState.project.tracks.isNotEmpty()) 80.dp else 0.dp
+        val trackHeaderWidthPx = with(androidx.compose.ui.platform.LocalDensity.current) { trackHeaderWidth.toPx() }
+        val timelineViewportWidth = (viewportWidth - trackHeaderWidthPx).coerceAtLeast(0f)
+        val centerX = timelineViewportWidth / 2f
         val rulerHeightPx = with(androidx.compose.ui.platform.LocalDensity.current) { 40.dp.toPx() }
         val renderProject = dragPreviewProject ?: uiState.project
         val contentHeightPx = rulerHeightPx + renderProject.tracks.size * (trackHeight + trackPadding)
@@ -156,7 +159,7 @@ fun AdvancedTimelineCanvas(
                 project = renderProject,
                 scrollX = scrollX,
                 scrollY = scrollY,
-                viewportWidthPx = viewportWidth.toFloat(),
+                viewportWidthPx = timelineViewportWidth,
                 viewportHeightPx = constraints.maxHeight.toFloat(),
                 pixelsPerFrame = pixelsPerFrame,
                 trackHeightPx = trackHeight,
@@ -248,7 +251,7 @@ fun AdvancedTimelineCanvas(
                                 } else {
                                     onClipSelect(hitClip?.id)
                                     if (hitClip == null) {
-                                        onPlayheadMoved(max(0, frame))
+                                        onPlayheadMoved(TimelineUiGeometry.clampPlayheadFrame(uiState.project, frame))
                                     }
                                 }
                             }
@@ -269,7 +272,9 @@ fun AdvancedTimelineCanvas(
                                     rulerHeightPx = 40.dp.toPx(),
                                     project = uiState.project,
                                     pixelsPerFrame = pixelsPerFrame,
-                                    selectedClipIds = uiState.selectedClipIds
+                                    selectedClipIds = uiState.selectedClipIds,
+                                    playheadFrame = playheadFrameFlow.value,
+                                    playheadHitRadiusPx = 24.dp.toPx()
                                 )
                                 when (val action = dragAction) {
                                     is TimelineDragAction.MoveClip -> dragGhostStartFrame = action.clip.timelineStart
@@ -297,7 +302,7 @@ fun AdvancedTimelineCanvas(
                                     }
                                     is TimelineDragAction.ScrubPlayhead -> {
                                         val frame = TimelineUiGeometry.xToFrame(change.position.x + scrollX, pixelsPerFrame)
-                                        onPlayheadMoved(max(0, frame))
+                                        onPlayheadMoved(TimelineUiGeometry.clampPlayheadFrame(uiState.project, frame))
                                     }
                                     is TimelineDragAction.MoveClip -> {
                                         val currentX = change.position.x + scrollX
@@ -414,7 +419,7 @@ fun AdvancedTimelineCanvas(
                                         isSelected = uiState.selectedClipIds.contains(clip.id),
                                         pixelsPerFrame = pixelsPerFrame,
                                         scrollX = scrollX,
-                                        viewportWidth = viewportWidth.toFloat(),
+                                        viewportWidth = timelineViewportWidth,
                                         modifier = Modifier
                                     )
                             }
@@ -461,15 +466,16 @@ fun AdvancedTimelineCanvas(
                 }
                 
                 // Fixed top overlay for Ruler
-                Box(modifier = Modifier.fillMaxWidth().height(40.dp)) {
-                    AdvancedTimelineRuler(scrollX, viewportWidth, pixelsPerFrame, uiState.project.settings.getFpsRational())
+                Box(modifier = Modifier.fillMaxWidth().height(40.dp).padding(start = trackHeaderWidth)) {
+                    AdvancedTimelineRuler(scrollX, timelineViewportWidth.toInt(), pixelsPerFrame, uiState.project.settings.getFpsRational())
                 }
                 
                 TimelinePlayheadIndicator(
                     playheadFrameFlow = playheadFrameFlow,
                     pixelsPerFrame = pixelsPerFrame,
                     scrollX = scrollX,
-                    frameToX = TimelineUiGeometry::frameToX
+                    frameToX = TimelineUiGeometry::frameToX,
+                    startOffset = trackHeaderWidth
                 )
             }
         }

@@ -114,7 +114,9 @@ fun VideoViewportSection(
     LaunchedEffect(isPlaying, project, timelinePreviewController, editorViewModel) {
         if (!isPlaying) {
             editorViewModel.playheadFrame.collect { frame ->
-                timelinePreviewController.seekToTimelineFrame(project, frame)
+                // Dragging the visible timeline cursor can emit one frame per pointer event. Let the
+                // player coalesce sub-frame movements instead of forcing an ExoPlayer seek each tick.
+                timelinePreviewController.seekToTimelineFrame(project, frame, forceSeek = false)
             }
         }
     }

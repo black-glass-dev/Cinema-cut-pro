@@ -131,7 +131,7 @@ class TimelineCoreV2AdapterTest {
         )
 
         val preview = TimelineCoreV2Adapter.previewEdit(project, command)
-        val commit = TimelineCoreV2Adapter.commitEdit(project, command)
+        val commit = TimelineCoreV2Adapter.commitEdits(project, listOf(command))
         val snap = TimelineCoreV2Adapter.snap(project, inputFrame = 1L, playheadFrame = 0L, thresholdFrames = 2L)
 
         assertTrue(preview is CoreV2EditOutcome.Rejected)

@@ -145,12 +145,12 @@ object TimelineGestureController {
             TimelineTool.SLIP -> CoreV2EditCommand(
                 kind = CoreV2EditKind.SLIP,
                 clipId = clip.id,
-                deltaFrames = delta
+                deltaFrames = delta ?: return null
             )
             TimelineTool.SLIDE -> CoreV2EditCommand(
                 kind = CoreV2EditKind.SLIDE,
                 clipId = clip.id,
-                deltaFrames = delta
+                deltaFrames = delta ?: return null
             )
             TimelineTool.RIPPLE -> {
                 if (action is TimelineDragAction.MoveClip) {
@@ -186,7 +186,7 @@ object TimelineGestureController {
                         kind = CoreV2EditKind.ROLL,
                         clipId = if (isStart) adjacent.id else clip.id,
                         otherClipId = if (isStart) clip.id else adjacent.id,
-                        deltaFrames = delta
+                        deltaFrames = delta ?: return null
                     )
                 }
             }

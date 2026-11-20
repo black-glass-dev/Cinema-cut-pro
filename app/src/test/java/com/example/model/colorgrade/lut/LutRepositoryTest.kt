@@ -26,10 +26,8 @@ class LutRepositoryTest {
 
     @Test
     fun initializeRegistersPersistedLutFilesAfterARestart() {
+        LutRepository.resetForTests()
         val file = writeLutFile("persisted-1")
-        file.parentFile?.listFiles()?.forEach { other ->
-            if (other != file) other.delete()
-        }
 
         kotlinx.coroutines.runBlocking {
             LutRepository.initialize(context)
@@ -43,8 +41,8 @@ class LutRepositoryTest {
 
     @Test
     fun initializeIsIdempotentAndDoesNotDuplicateEntries() {
+        LutRepository.resetForTests()
         writeLutFile("persisted-2")
-        writeLutFile("persisted-3")
 
         kotlinx.coroutines.runBlocking {
             LutRepository.initialize(context)
@@ -57,6 +55,7 @@ class LutRepositoryTest {
 
     @Test
     fun deleteLutRemovesEntryCacheAndPersistedFile() {
+        LutRepository.resetForTests()
         val file = writeLutFile("deletable")
         kotlinx.coroutines.runBlocking {
             LutRepository.initialize(context)

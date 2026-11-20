@@ -54,6 +54,17 @@ object LutRepository {
     }
 
     /**
+     * Clears the in-memory registry and cache. Tests call this to simulate an app restart;
+     * Robolectric reuses one classloader per configuration, so static state would otherwise
+     * leak across test methods.
+     */
+    internal fun resetForTests() {
+        luts.clear()
+        lutDataCache.clear()
+        isInitialized = false
+    }
+
+    /**
      * Deletes a LUT's registry entry, cached data, and persisted file. Returns false when the
      * id is unknown; callers refresh their lists afterwards.
      */

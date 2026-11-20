@@ -164,13 +164,13 @@ class Media3ClipAdjustmentSupportTest {
     }
 
     @Test
-    fun activeSelectiveHslAndEnabledQualifierRemainRejectedUntilValidatedForExport() {
+    fun activeSelectiveHslAndEnabledQualifierRenderThroughTheSharedExportEffect() {
         val selectiveHsl = VideoAdjustmentParams.default().copy(
             hslHue = FloatArray(8).also { it[2] = 0.15f }
         )
         assertTrue(
-            Media3ClipAdjustmentSupport.validationErrors(stack(selectiveHsl))
-                .any { it.contains("selective HSL bands") }
+            Media3ClipAdjustmentSupport.validationErrors(stack(selectiveHsl)).joinToString("\n"),
+            Media3ClipAdjustmentSupport.validationErrors(stack(selectiveHsl)).isEmpty()
         )
 
         val qualifier = VideoAdjustmentParams.default().copy(
@@ -178,8 +178,8 @@ class Media3ClipAdjustmentSupportTest {
             qualHueShift = 0.2f
         )
         assertTrue(
-            Media3ClipAdjustmentSupport.validationErrors(stack(qualifier))
-                .any { it.contains("HSL qualifier") }
+            Media3ClipAdjustmentSupport.validationErrors(stack(qualifier)).joinToString("\n"),
+            Media3ClipAdjustmentSupport.validationErrors(stack(qualifier)).isEmpty()
         )
     }
 

@@ -240,3 +240,8 @@ Done: reordered both gesture controllers so an edge trim beats nearby playhead o
 Evidence: failure was isolated to `TimelineGestureControllerTest#draggingVisiblePlayheadLineOverAClipStartsScrubbingNotClipEditing` and `AdvancedTimelineGestureControllerTest#visiblePlayheadDragWinsOverClipEditInAdvancedTimeline`; follow-up CI pending.
 Remaining: corrected Kotlin/JVM result, APK build, and handset playback/trim verification are pending; local Gradle remains BLOCKED because Java is absent.
 Next: rerun Android CI on the corrected change, then hand off the passing test APK for device validation.
+## 2026-10-10 — Timeline scrub-priority correction CI verification
+Done: corrected the native-unavailable gesture ordering after the first CI run exposed two scrub regressions; both the basic and advanced playhead paths retain navigation while Core v2-only edits stay gated.
+Evidence: Android CI run `44875144609` PASS on `686fa62` for Kotlin/native compilation, all JVM tests, native host tests, and FFmpeg checks; no APK was produced because this push did not request release publication.
+Remaining: launcher appearance, trim gestures, and playback across sequential/overlapping videos remain UNVERIFIED on handset; the source boundary policy clamps frames and chooses the next visible clip.
+Next: publish the approved debug test APK from this branch so the user can verify the launcher, edge trimming, and multi-video playback on-device.

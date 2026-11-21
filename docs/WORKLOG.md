@@ -256,3 +256,8 @@ Research: Adobe Premiere describes Smooth Scroll as keeping the playhead centere
 Evidence: Timeline Core v2 host suite PASS (170,624 assertions); native export suite PASS; XML parse and `git diff --check` PASS; Android CI pending.
 Remaining: compile/JVM verification and handset checks for timeline edge clipping, smooth playback scrolling, and button appearance are UNVERIFIED; local Gradle is unavailable without Java.
 Next: run Android CI, publish a new test APK on success, and ask for device verification of bounded panning, follow-playhead smoothness, and Import/Export styling.
+## 2026-10-10 — Smooth-scroll CI and test APK #120
+Done: CI compiled/tested the bounded-pan, pointer-input, smooth-follow, and reference-styled toolbar changes, then published a debug APK.
+Evidence: run `44878662716` PASS (Kotlin/native compile, JVM/native tests, FFmpeg, APK/license checks); APK `Cinema-Cut-Pro-debug-120-1.apk` (90,122,377 bytes), SHA-256 `d1e2547a0df8a570eead2820e3b42ca9f7095c89214cd39e553c2cf19ef4f9e3`, release https://github.com/black-glass-dev/Cinema-cut-pro/releases/tag/android-test-120-1.
+Status: Premiere’s Smooth Scroll model is implemented (playhead stays visible while clips/ruler move); physical-device clipping, scrubbing smoothness, and playback remain UNVERIFIED.
+Next: install APK #120 and report whether panning stops at sequence bounds and the red playhead follows smoothly during playback.

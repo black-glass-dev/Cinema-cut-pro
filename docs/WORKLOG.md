@@ -234,3 +234,9 @@ Done: switched manifest launcher/roundIcon to the packaged adaptive mipmaps; mov
 Evidence: Timeline Core v2 host tests PASS (170,624 assertions); native export tests PASS; adaptive/manifest XML and source-placement checks PASS; `git diff --check` PASS.
 Remaining: Android/Kotlin build and new JVM test are BLOCKED locally because Java/JAVA_HOME are absent; handset launcher, clip-edge trim, and playback-boundary behavior remain UNVERIFIED. Existing preview code clamps each active clip and transitions at the next visible boundary; playback fix confirmation still needs device reproduction.
 Next: run Android CI/Gradle with Java, fix any compile or JVM failures, then request handset verification of launcher icon, boundary playback, and left/right trim gestures.
+## 2026-10-10 — Preserve scrub priority when native editing is unavailable
+Failed / root cause → rule: CI run `44874619806` exposed two JVM regressions because trim hit-testing checked native availability before playhead scrubbing; keep scrub navigation available without native Core v2, and gate only trim/move edits on Core availability.
+Done: reordered both gesture controllers so an edge trim beats nearby playhead only when Core v2 is available, while ruler/playhead scrubs remain responsive and non-native edits still pan.
+Evidence: failure was isolated to `TimelineGestureControllerTest#draggingVisiblePlayheadLineOverAClipStartsScrubbingNotClipEditing` and `AdvancedTimelineGestureControllerTest#visiblePlayheadDragWinsOverClipEditInAdvancedTimeline`; follow-up CI pending.
+Remaining: corrected Kotlin/JVM result, APK build, and handset playback/trim verification are pending; local Gradle remains BLOCKED because Java is absent.
+Next: rerun Android CI on the corrected change, then hand off the passing test APK for device validation.

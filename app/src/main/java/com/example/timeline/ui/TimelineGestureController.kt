@@ -78,7 +78,6 @@ object TimelineGestureController {
         trackPaddingPx: Float = 12f
     ): TimelineDragAction {
         if (startOffset.y < rulerHeightPx) return TimelineDragAction.ScrubPlayhead
-        if (!TimelineCoreV2Adapter.isAvailable()) return TimelineDragAction.Pan(scrollX, scrollY)
 
         val tapX = startOffset.x + scrollX
         val tapY = startOffset.y + scrollY - rulerHeightPx
@@ -93,7 +92,7 @@ object TimelineGestureController {
             }
             .firstOrNull()
         val trimClip = hitClip ?: selectedClip
-        if (trimClip != null) {
+        if (TimelineCoreV2Adapter.isAvailable() && trimClip != null) {
             TimelineGestureController.trimActionAtEdge(trimClip, tapX, pixelsPerFrame, trimHitRadiusPx)
                 ?.let { return it }
         }
@@ -102,7 +101,7 @@ object TimelineGestureController {
         if (playheadHitRadiusPx.isFinite() && playheadHitRadiusPx >= 0f &&
             startOffset.x.isFinite() && kotlin.math.abs(startOffset.x - playheadX) <= playheadHitRadiusPx
         ) return TimelineDragAction.ScrubPlayhead
-        if (hitClip == null) return TimelineDragAction.Pan(scrollX, scrollY)
+        if (!TimelineCoreV2Adapter.isAvailable() || hitClip == null) return TimelineDragAction.Pan(scrollX, scrollY)
 
         val startFrame = TimelineUiGeometry.xToFrame(tapX, pixelsPerFrame)
         val offsetFrames = try {

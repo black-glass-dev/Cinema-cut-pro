@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.gestures.TransformableState
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.abs
-import kotlin.math.max
 
 /** A leaf-only subscriber: live playback position does not recompose the timeline's clip layout. */
 @Composable
@@ -39,23 +38,27 @@ internal fun FollowPlayheadScrollEffect(
     pixelsPerFrame: Float,
     centerX: Float,
     currentScrollX: Float,
+    maxScrollX: Float,
     isPlaying: Boolean,
     isFollowing: Boolean,
     isDragging: Boolean,
     transformableState: TransformableState,
-    frameToX: (Long, Float) -> Float,
     onScrollTo: (Float) -> Unit
 ) {
     val playheadFrame by playheadFrameFlow.collectAsState()
     val latestOnScrollTo by rememberUpdatedState(onScrollTo)
 
-    LaunchedEffect(playheadFrame, pixelsPerFrame, centerX, currentScrollX, isPlaying, isFollowing, isDragging) {
+    LaunchedEffect(playheadFrame, pixelsPerFrame, centerX, currentScrollX, maxScrollX, isPlaying, isFollowing, isDragging) {
         if (!isDragging && !transformableState.isTransformInProgress && isPlaying && isFollowing) {
-            val targetScrollX = max(0f, frameToX(playheadFrame, pixelsPerFrame) - centerX)
-            // Avoid laying out every track and clip on every decoded frame just to keep the cursor
-            // mathematically centered. The playhead indicator itself still moves at display rate.
-            val minScrollStepPx = max(24f, pixelsPerFrame * 10f)
-            if (abs(targetScrollX - currentScrollX) >= minScrollStepPx) {
+            val targetScrollX = TimelineUiGeometry.followPlayheadScrollX(
+                playheadFrame = playheadFrame,
+                pixelsPerFrame = pixelsPerFrame,
+                centerX = centerX,
+                maxScrollX = maxScrollX
+            )
+            // Smooth-scroll with playback: update the viewport by each decoded frame so the
+            // playhead stays visible while the clips and ruler move beneath it.
+            if (abs(targetScrollX - currentScrollX) >= 0.5f) {
                 latestOnScrollTo(targetScrollX)
             }
         }

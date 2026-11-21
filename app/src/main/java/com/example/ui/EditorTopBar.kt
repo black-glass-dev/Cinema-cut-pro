@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.Image
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -20,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.res.painterResource
 import com.example.R
@@ -76,26 +78,28 @@ fun EditorTopBar(
             Button(
                 onClick = onImportClick,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    containerColor = Color(0xFFFF3B30),
+                    contentColor = Color.White
                 ),
-                shape = RoundedCornerShape(22.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                modifier = Modifier.padding(end = 6.dp).height(36.dp)
+                shape = RoundedCornerShape(16.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                modifier = Modifier.padding(end = 6.dp).height(40.dp)
             ) {
-                Text("Import", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Icon(Icons.Filled.Upload, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(5.dp))
+                Text("Import", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
             }
             Button(
                 onClick = onExportClick,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    containerColor = Color(0xFF19191C),
+                    contentColor = Color.White
                 ),
-                shape = RoundedCornerShape(22.dp),
+                shape = RoundedCornerShape(16.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                modifier = Modifier.padding(end = 8.dp).height(36.dp)
+                modifier = Modifier.padding(end = 8.dp).height(40.dp)
             ) {
-                Text("Export", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text("Export", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),

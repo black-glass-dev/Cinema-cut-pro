@@ -55,7 +55,12 @@ fun CineTimelineCanvas(
 ) {
     var scrollX by remember { mutableStateOf(0f) }
     var scrollY by remember { mutableStateOf(0f) }
+    var maxHorizontalScroll by remember { mutableFloatStateOf(0f) }
     var maxVerticalScroll by remember { mutableFloatStateOf(0f) }
+    val latestScrollX = rememberUpdatedState(scrollX)
+    val latestScrollY = rememberUpdatedState(scrollY)
+    val latestMaxHorizontalScroll = rememberUpdatedState(maxHorizontalScroll)
+    val latestMaxVerticalScroll = rememberUpdatedState(maxVerticalScroll)
     var isDragging by remember { mutableStateOf(false) }
     
     var contextMenuVisible by remember { mutableStateOf(false) }
@@ -118,8 +123,8 @@ fun CineTimelineCanvas(
         if (onZoomChange != null) {
             onZoomChange(pixelsPerFrame * zoomChange)
         }
-        scrollX = max(0f, scrollX - panChange.x)
-        scrollY = (scrollY - panChange.y).coerceIn(0f, maxVerticalScroll)
+        scrollX = (scrollX - panChange.x).coerceIn(0f, latestMaxHorizontalScroll.value)
+        scrollY = (scrollY - panChange.y).coerceIn(0f, latestMaxVerticalScroll.value)
     }
     
     BoxWithConstraints(
@@ -134,6 +139,7 @@ fun CineTimelineCanvas(
         val trackHeaderWidthPx = with(androidx.compose.ui.platform.LocalDensity.current) { trackHeaderWidth.toPx() }
         val timelineViewportWidth = (viewportWidth - trackHeaderWidthPx).coerceAtLeast(0f)
         val centerX = timelineViewportWidth / 2f
+        val maxScrollX = TimelineUiGeometry.maxScrollX(uiState.project, pixelsPerFrame, timelineViewportWidth)
         val rulerHeightDp = TimelineDesignTokens.RulerHeight
         val rulerHeightPx = with(androidx.compose.ui.platform.LocalDensity.current) { rulerHeightDp.toPx() }
         val renderProject = dragPreviewProject ?: uiState.project
@@ -156,6 +162,9 @@ fun CineTimelineCanvas(
             )
         }
         SideEffect {
+            if (maxHorizontalScroll != maxScrollX) maxHorizontalScroll = maxScrollX
+            val boundedScrollX = scrollX.coerceIn(0f, maxScrollX)
+            if (scrollX != boundedScrollX) scrollX = boundedScrollX
             if (maxVerticalScroll != maxScrollY) maxVerticalScroll = maxScrollY
             val boundedScrollY = scrollY.coerceIn(0f, maxScrollY)
             if (scrollY != boundedScrollY) scrollY = boundedScrollY
@@ -167,11 +176,11 @@ fun CineTimelineCanvas(
             pixelsPerFrame = pixelsPerFrame,
             centerX = centerX,
             currentScrollX = scrollX,
+            maxScrollX = maxScrollX,
             isPlaying = isPlaying,
             isFollowing = isFollowing,
             isDragging = isDragging,
             transformableState = transformableState,
-            frameToX = TimelineUiGeometry::frameToX,
             onScrollTo = { scrollX = it }
         )
         
@@ -228,12 +237,12 @@ fun CineTimelineCanvas(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    
-                    .pointerInput(pixelsPerFrame, scrollX, scrollY, uiState.selectedClipId) {
+                    .clipToBounds()
+                    .pointerInput(pixelsPerFrame, uiState.selectedClipId) {
                         detectTapGestures(
                             onLongPress = { offset ->
-                                val tapX = offset.x + scrollX
-                                val tapY = offset.y + scrollY - rulerHeightPx
+                                val tapX = offset.x + latestScrollX.value
+                                val tapY = offset.y + latestScrollY.value - rulerHeightPx
                                 val hitClip = TimelineGestureController.hitTest(tapX, tapY, uiState.project, pixelsPerFrame, trackHeight, trackPadding)
                                 if (hitClip != null) {
                                     onClipSelected(hitClip.id)
@@ -245,8 +254,8 @@ fun CineTimelineCanvas(
                             onTap = { offset ->
                                 contextMenuVisible = false
                                 contextMenuClipId = null
-                                val tapX = offset.x + scrollX
-                                val tapY = offset.y + scrollY - rulerHeightPx
+                                val tapX = offset.x + latestScrollX.value
+                                val tapY = offset.y + latestScrollY.value - rulerHeightPx
                                 val hitClip = TimelineGestureController.hitTest(tapX, tapY, uiState.project, pixelsPerFrame, trackHeight, trackPadding)
                                 onClipSelected(hitClip?.id)
                                 // A tap on a clip must both select it and seek. Previously the
@@ -254,14 +263,14 @@ fun CineTimelineCanvas(
                                 // unresponsive over the most frequently tapped part of the track.
                                 onPlayheadMoved(TimelineUiGeometry.tapToPlayheadFrame(
                                     localX = offset.x,
-                                    scrollX = scrollX,
+                                    scrollX = latestScrollX.value,
                                     pixelsPerFrame = pixelsPerFrame,
                                     project = uiState.project
                                 ))
                             }
                         )
                     }
-                    .pointerInput(pixelsPerFrame, scrollX, scrollY, uiState.selectedClipId) {
+                    .pointerInput(pixelsPerFrame, uiState.selectedClipId) {
                         detectDragGestures(
                             onDragStart = { offset ->
                                 isDragging = true
@@ -271,8 +280,8 @@ fun CineTimelineCanvas(
                                 dragPreviewCommands = null
                                 dragAction = TimelineGestureController.determineDragAction(
                                     startOffset = offset,
-                                    scrollX = scrollX,
-                                    scrollY = scrollY,
+                                    scrollX = latestScrollX.value,
+                                    scrollY = latestScrollY.value,
                                     rulerHeightPx = rulerHeightPx,
                                     project = uiState.project,
                                     pixelsPerFrame = pixelsPerFrame,
@@ -304,15 +313,15 @@ fun CineTimelineCanvas(
                                     dragGhostEndFrame = null
                                 } else when (val action = dragAction) {
                                     is TimelineDragAction.Pan -> {
-                                        scrollX = max(0f, scrollX - dragAmount.x)
-                                        scrollY = (scrollY - dragAmount.y).coerceIn(0f, maxVerticalScroll)
+                                        scrollX = (latestScrollX.value - dragAmount.x).coerceIn(0f, latestMaxHorizontalScroll.value)
+                                        scrollY = (latestScrollY.value - dragAmount.y).coerceIn(0f, latestMaxVerticalScroll.value)
                                     }
                                     is TimelineDragAction.ScrubPlayhead -> {
-                                        val frame = TimelineUiGeometry.xToFrame(change.position.x + scrollX, pixelsPerFrame)
+                                        val frame = TimelineUiGeometry.xToFrame(change.position.x + latestScrollX.value, pixelsPerFrame)
                                         onPlayheadMoved(TimelineUiGeometry.clampPlayheadFrame(uiState.project, frame))
                                     }
                                     is TimelineDragAction.MoveClip -> {
-                                        val currentX = change.position.x + scrollX
+                                        val currentX = change.position.x + latestScrollX.value
                                         val frame = TimelineUiGeometry.xToFrame(currentX, pixelsPerFrame)
                                         val rawStart = max(0L, frame - action.startOffsetFrames)
                                         val snapped = if (uiState.snapSettings.isSnappingEnabled) {
@@ -331,7 +340,7 @@ fun CineTimelineCanvas(
                                         }
                                     }
                                     is TimelineDragAction.TrimStart -> {
-                                        val currentX = change.position.x + scrollX
+                                        val currentX = change.position.x + latestScrollX.value
                                         val frame = TimelineUiGeometry.xToFrame(currentX, pixelsPerFrame)
                                         val boundedFrame = TimelineGestureController.clampTrimTarget(action, max(0L, frame), uiState.project)
                                         val snapped = if (uiState.snapSettings.isSnappingEnabled) {
@@ -350,7 +359,7 @@ fun CineTimelineCanvas(
                                         }
                                     }
                                     is TimelineDragAction.TrimEnd -> {
-                                        val currentX = change.position.x + scrollX
+                                        val currentX = change.position.x + latestScrollX.value
                                         val frame = TimelineUiGeometry.xToFrame(currentX, pixelsPerFrame)
                                         val boundedFrame = TimelineGestureController.clampTrimTarget(action, max(0L, frame), uiState.project)
                                         val snapped = if (uiState.snapSettings.isSnappingEnabled) {

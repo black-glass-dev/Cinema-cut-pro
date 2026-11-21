@@ -5,6 +5,31 @@ import kotlin.math.floor
 
 /** Presentation-only frame/pixel conversion. Timeline model and edit math remain integer/native. */
 object TimelineUiGeometry {
+    fun maxScrollX(project: TimelineProject, pixelsPerFrame: Float, viewportWidthPx: Float): Float {
+        if (!pixelsPerFrame.isFinite() || pixelsPerFrame <= 0f ||
+            !viewportWidthPx.isFinite() || viewportWidthPx <= 0f
+        ) return 0f
+        val endFrame = project.tracks.asSequence()
+            .flatMap { it.clips.asSequence() }
+            .maxOfOrNull { it.timelineEnd }
+            ?: 0L
+        val contentWidth = endFrame.toDouble() * pixelsPerFrame.toDouble()
+        if (!contentWidth.isFinite()) return Float.MAX_VALUE
+        return (contentWidth - viewportWidthPx.toDouble())
+            .coerceIn(0.0, Float.MAX_VALUE.toDouble())
+            .toFloat()
+    }
+
+    fun followPlayheadScrollX(
+        playheadFrame: Long,
+        pixelsPerFrame: Float,
+        centerX: Float,
+        maxScrollX: Float
+    ): Float {
+        if (!centerX.isFinite() || centerX < 0f || !maxScrollX.isFinite() || maxScrollX < 0f) return 0f
+        return (frameToX(playheadFrame, pixelsPerFrame) - centerX).coerceIn(0f, maxScrollX)
+    }
+
     fun frameToX(frame: Long, pixelsPerFrame: Float): Float {
         if (!pixelsPerFrame.isFinite() || pixelsPerFrame <= 0f) return 0f
         val pixel = frame.toDouble() * pixelsPerFrame.toDouble()

@@ -19,6 +19,35 @@ class TimelineUiGeometryTest {
     }
 
     @Test
+    fun horizontalScrollCannotMoveTimelinePastItsContentBounds() {
+        val clip = TimelineClip(
+            id = "clip",
+            trackId = "video",
+            mediaId = "media",
+            name = "clip.mp4",
+            sourceIn = 0L,
+            sourceOut = 100L,
+            timelineStart = 20L
+        )
+        val project = TimelineProject(
+            id = "project",
+            settings = ProjectSettings(projectId = "project", projectName = "Test"),
+            tracks = listOf(TimelineTrack("video", "Video", TrackType.VIDEO, clips = listOf(clip)))
+        )
+
+        assertEquals(140f, TimelineUiGeometry.maxScrollX(project, 2f, 100f), 0f)
+        assertEquals(0f, TimelineUiGeometry.maxScrollX(project, 2f, 300f), 0f)
+        assertEquals(0f, TimelineUiGeometry.maxScrollX(project, Float.NaN, 100f), 0f)
+    }
+
+    @Test
+    fun fixedPlayheadScrollFollowsTheCursorAndClampsAtSequenceEnds() {
+        assertEquals(0f, TimelineUiGeometry.followPlayheadScrollX(20L, 2f, 50f, 140f), 0f)
+        assertEquals(50f, TimelineUiGeometry.followPlayheadScrollX(50L, 2f, 50f, 140f), 0f)
+        assertEquals(140f, TimelineUiGeometry.followPlayheadScrollX(110L, 2f, 50f, 140f), 0f)
+    }
+
+    @Test
     fun tapsInEmptyTimelineGapsPlacePlayheadAtTheTappedFrame() {
         val first = TimelineClip(
             id = "first",

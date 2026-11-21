@@ -250,3 +250,9 @@ Done: published installable debug test APK #118 from source `72e086c` after the 
 Evidence: CI run `44875799580` PASS; APK `Cinema-Cut-Pro-debug-118-1.apk` (90,122,377 bytes), release https://github.com/black-glass-dev/Cinema-cut-pro/releases/tag/android-test-118-1; SHA-256 sidecar is attached.
 Remaining: device appearance, launcher icon, trim gestures, and reported playback-boundary behavior remain UNVERIFIED; the playhead/preview sequence boundary still needs handset reproduction.
 Next: install APK #118 and report whether the icon is correct, left/right edge drags trim, and playback behaves correctly across the clips.
+## 2026-10-10 — Smooth playback-follow, bounded timeline panning, and toolbar reference match
+Done: matched Import red/upload and Export charcoal/white top-bar references; clamped horizontal scroll to sequence bounds, kept drag handlers alive across offset updates, and made playback follow update per decoded frame so clips/ruler move under the playhead.
+Research: Adobe Premiere describes Smooth Scroll as keeping the playhead centered while clips and the ruler move; https://helpx.adobe.com/au/premiere-pro/using/preferences.html.
+Evidence: Timeline Core v2 host suite PASS (170,624 assertions); native export suite PASS; XML parse and `git diff --check` PASS; Android CI pending.
+Remaining: compile/JVM verification and handset checks for timeline edge clipping, smooth playback scrolling, and button appearance are UNVERIFIED; local Gradle is unavailable without Java.
+Next: run Android CI, publish a new test APK on success, and ask for device verification of bounded panning, follow-playhead smoothness, and Import/Export styling.

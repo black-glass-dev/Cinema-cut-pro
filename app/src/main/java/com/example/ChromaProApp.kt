@@ -4,12 +4,17 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -20,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -67,6 +73,16 @@ fun ChromaProApp() {
     val scopeViewModel: ScopeViewModel = viewModel()
     val editorViewModel: EditorViewModel = viewModel()
     val timelinePreviewController = remember(appContext) { TimelinePreviewController(appContext) }
+    val playbackPreferences = remember(appContext) {
+        appContext.getSharedPreferences("playback_preferences", android.content.Context.MODE_PRIVATE)
+    }
+    var playThroughGaps by remember(playbackPreferences) {
+        mutableStateOf(playbackPreferences.getBoolean("play_through_gaps", true))
+    }
+    LaunchedEffect(timelinePreviewController, playThroughGaps) {
+        timelinePreviewController.setPlayThroughGaps(playThroughGaps)
+        playbackPreferences.edit().putBoolean("play_through_gaps", playThroughGaps).apply()
+    }
     val importLaunchers = com.example.timeline.ui.rememberMediaImportLaunchers(
         onUrisPicked = { uris -> timelineViewModel.handlePickedUris(uris) }
     )
@@ -212,7 +228,22 @@ fun ChromaProApp() {
         AlertDialog(
             onDismissRequest = { showSettingsDialog = false },
             title = { Text("Settings") },
-            text = { Text("Cinema Cut Pro project and playback settings will be available here.") },
+            text = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Play through timeline gaps", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "When on, playback shows black in empty timeline spaces and continues to the next clip.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    Switch(checked = playThroughGaps, onCheckedChange = { playThroughGaps = it })
+                }
+            },
             confirmButton = { TextButton(onClick = { showSettingsDialog = false }) { Text("Done") } }
         )
     }

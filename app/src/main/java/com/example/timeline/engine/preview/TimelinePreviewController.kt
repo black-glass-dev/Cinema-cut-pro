@@ -128,7 +128,23 @@ class TimelinePreviewController(private val context: Context) {
     private var pendingBoundaryClipId: String? = null
     private var handledEndEngine: PreviewEngine? = null
     private var handledEndClipId: String? = null
+    @Volatile private var playThroughGaps: Boolean = true
+    @Volatile private var gapPlaybackPending: Boolean = false
+    private var gapPlaybackJob: Job? = null
     private var stillPlaybackJob: Job? = null
+
+    /** When enabled, intentional empty timeline ranges render black while transport continues. */
+    fun setPlayThroughGaps(enabled: Boolean) {
+        playThroughGaps = enabled
+        if (!enabled && gapPlaybackJob?.isActive == true) {
+            gapPlaybackPending = true
+            gapPlaybackJob?.cancel()
+            gapPlaybackJob = null
+            previewEngine.pause()
+            gapPlaybackPending = false
+            onPlaybackEnded?.invoke()
+        }
+    }
 
     private val scope = CoroutineScope(Dispatchers.Main + Job())
     private var playheadJob: Job? = null
@@ -218,12 +234,22 @@ class TimelinePreviewController(private val context: Context) {
                         if (previewEngine === engine && activeProject?.id == project.id) {
                             seekToTimelineFrame(project, decision.frame, forceSeek = true)
                             if (activeProject?.id == project.id && activeClip.value?.id == decision.clip.id) {
-                                previewEngine.play()
+                                play()
                             }
                         }
                     } finally {
                         if (pendingBoundaryClipId == clip.id) pendingBoundaryClipId = null
                     }
+                }
+            }
+            is PlaybackBoundaryDecision.PlayThroughGap -> {
+                if (!playThroughGaps) {
+                    engine.pause()
+                    lastPlayheadFrame = (decision.gapStartFrame - 1L).coerceAtLeast(clip.timelineStart)
+                    onPlayheadAdvanced?.invoke(lastPlayheadFrame)
+                    onPlaybackEnded?.invoke()
+                } else {
+                    beginGapPlayback(project, decision.gapStartFrame, decision.nextClip)
                 }
             }
         }
@@ -348,6 +374,8 @@ class TimelinePreviewController(private val context: Context) {
     }
 
     fun seekToTimelineFrame(project: TimelineProject, frame: Long, forceSeek: Boolean = true) {
+        gapPlaybackJob?.cancel()
+        gapPlaybackJob = null
         stillPlaybackJob?.cancel()
         stillPlaybackJob = null
         if (activeProject?.id != project.id) {
@@ -449,6 +477,56 @@ class TimelinePreviewController(private val context: Context) {
         }
     }
 
+    private fun beginGapPlayback(project: TimelineProject, gapStartFrame: Long, nextClip: TimelineClip) {
+        gapPlaybackJob?.cancel()
+        gapPlaybackPending = true
+        try {
+            val engine = previewEngine
+            engine.pause()
+            lastPlayheadFrame = gapStartFrame
+            loadClipAtPlayhead(project, gapStartFrame, forceSeek = true)
+            val startElapsedMs = android.os.SystemClock.elapsedRealtime()
+            val frameRate = project.settings.getFpsRational()
+            gapPlaybackJob = scope.launch {
+                try {
+                    while (previewEngine === engine && activeProject?.id == project.id && playThroughGaps) {
+                        val elapsedMs = android.os.SystemClock.elapsedRealtime() - startElapsedMs
+                        val elapsedFrames = try {
+                            Math.multiplyExact(elapsedMs, frameRate.numerator.toLong()) /
+                                (1_000L * frameRate.denominator.toLong())
+                        } catch (_: ArithmeticException) {
+                            Long.MAX_VALUE
+                        }
+                        val frame = try {
+                            Math.addExact(gapStartFrame, elapsedFrames)
+                        } catch (_: ArithmeticException) {
+                            Long.MAX_VALUE
+                        }
+                        if (frame >= nextClip.timelineStart) break
+                        if (frame != lastPlayheadFrame) {
+                            lastPlayheadFrame = frame
+                            onPlayheadAdvanced?.invoke(frame)
+                        }
+                        delay(16L)
+                    }
+                    if (previewEngine === engine && activeProject?.id == project.id && playThroughGaps) {
+                        lastPlayheadFrame = nextClip.timelineStart
+                        onPlayheadAdvanced?.invoke(nextClip.timelineStart)
+                        loadClipAtPlayhead(project, nextClip.timelineStart, forceSeek = true)
+                        if (activeProject?.id == project.id && activeClip.value != null) {
+                            gapPlaybackJob = null
+                            play()
+                        }
+                    }
+                } finally {
+                    if (gapPlaybackJob?.isActive != true) gapPlaybackJob = null
+                }
+            }
+        } finally {
+            gapPlaybackPending = false
+        }
+    }
+
     private fun startStillClipPlayback(project: TimelineProject, clip: TimelineClip) {
         stillPlaybackJob?.cancel()
         val engine = previewEngine
@@ -493,24 +571,54 @@ class TimelinePreviewController(private val context: Context) {
     fun play() {
         handledEndEngine = null
         handledEndClipId = null
+        if (gapPlaybackJob?.isActive == true || stillPlaybackJob?.isActive == true) return
+        val project = activeProject
         val clip = _activeClip.value
-        if (clip != null && lastPlayheadFrame >= clip.timelineEnd - 1) {
-            seekToTimelineFrame(activeProject!!, clip.timelineStart)
+        if (clip != null && lastPlayheadFrame >= clip.timelineEnd - 1L) {
+            val currentProject = project ?: return
+            val decision = playbackBoundaryDecision(currentProject, clip)
+            if (decision is PlaybackBoundaryDecision.PlayThroughGap) {
+                if (playThroughGaps) {
+                    beginGapPlayback(currentProject, decision.gapStartFrame, decision.nextClip)
+                    return
+                }
+                seekToTimelineFrame(currentProject, clip.timelineStart)
+            } else if (decision is PlaybackBoundaryDecision.StopAtLastFrame) {
+                seekToTimelineFrame(currentProject, clip.timelineStart)
+            }
+        } else if (clip == null && project != null) {
+            val nextClip = project.tracks.asSequence()
+                .filter { it.type == com.example.timeline.core.TrackType.VIDEO && it.isVisible }
+                .flatMap { it.clips.asSequence() }
+                .filter { it.isEnabled && it.duration > 0L && it.timelineStart > lastPlayheadFrame }
+                .minByOrNull { it.timelineStart }
+            if (nextClip != null) {
+                val visibleNextClip = TimelineFrameResolver.getTopmostVisibleVideoClip(project, nextClip.timelineStart)
+                    ?: nextClip
+                if (playThroughGaps) {
+                    beginGapPlayback(project, lastPlayheadFrame.coerceAtMost(nextClip.timelineStart), visibleNextClip)
+                } else {
+                    seekToTimelineFrame(project, nextClip.timelineStart, forceSeek = true)
+                    play()
+                }
+                return
+            }
         }
-        val activeProject = activeProject
         val activeClip = _activeClip.value
         val activeAsset = _activeAsset.value
-        if (activeProject != null && activeClip != null && activeAsset != null &&
+        if (project != null && activeClip != null && activeAsset != null &&
             (activeAsset.assetType == com.example.timeline.media.MediaAssetType.IMAGE ||
                 activeAsset.mimeType.startsWith("image/"))
         ) {
-            startStillClipPlayback(activeProject, activeClip)
+            startStillClipPlayback(project, activeClip)
             return
         }
         previewEngine.play()
     }
 
     fun pause() {
+        gapPlaybackJob?.cancel()
+        gapPlaybackJob = null
         stillPlaybackJob?.cancel()
         stillPlaybackJob = null
         previewEngine.pause()
@@ -521,6 +629,8 @@ class TimelinePreviewController(private val context: Context) {
     }
 
     fun stop() {
+        gapPlaybackJob?.cancel()
+        gapPlaybackJob = null
         stillPlaybackJob?.cancel()
         stillPlaybackJob = null
         previewEngine.pause()
@@ -592,6 +702,8 @@ class TimelinePreviewController(private val context: Context) {
         onPlaybackEnded = null
         playheadJob?.cancel()
         playheadJob = null
+        gapPlaybackJob?.cancel()
+        gapPlaybackJob = null
         stillPlaybackJob?.cancel()
         stillPlaybackJob = null
         scope.cancel()

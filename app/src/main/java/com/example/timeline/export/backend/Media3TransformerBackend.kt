@@ -65,6 +65,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
 /**
@@ -125,6 +126,8 @@ class Media3TransformerBackend internal constructor(
 
     private data class ExportClipPlan(
         val clipId: String,
+        val timelineStartFrame: Long,
+        val timelineDurationFrames: Long,
         val sourceUri: Uri,
         val sourceStartFrame: Long,
         val sourceEndFrameExclusive: Long,
@@ -233,6 +236,7 @@ class Media3TransformerBackend internal constructor(
         var succeeded = false
         var outputFile: File? = null
         var mcrawTempDirectory: File? = null
+        var gapTempDirectory: File? = null
         var totalFrames = 0L
 
         try {
@@ -337,7 +341,58 @@ class Media3TransformerBackend internal constructor(
                 }
             }
 
-            val editedItems = plan.clips.map { clipPlan ->
+            val hasTimelineGaps = plan.clips.zipWithNext().any { (first, next) ->
+                next.timelineStartFrame > Math.addExact(first.timelineStartFrame, first.timelineDurationFrames)
+            }
+            val blackGapFile = if (hasTimelineGaps) {
+                val directory = File(appContext.cacheDir, "timeline-gap-export-${UUID.randomUUID()}")
+                require(directory.mkdirs()) { "Could not create temporary black-gap media." }
+                gapTempDirectory = directory
+                File(directory, "black.png").also { file ->
+                    val bitmap = android.graphics.Bitmap.createBitmap(2, 2, android.graphics.Bitmap.Config.ARGB_8888)
+                    try {
+                        bitmap.eraseColor(android.graphics.Color.BLACK)
+                        file.outputStream().use { output ->
+                            check(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output)) {
+                                "Could not prepare black-gap media for export."
+                            }
+                        }
+                    } finally {
+                        bitmap.recycle()
+                    }
+                }
+            } else null
+            val editedItems = buildList {
+                var timelineEndFrame = 0L
+                plan.clips.forEach { clipPlan ->
+                    if (isCancelled()) throw CancellationException("Export was cancelled.")
+                    if (clipPlan.timelineStartFrame > timelineEndFrame) {
+                        val gapFrames = Math.subtractExact(clipPlan.timelineStartFrame, timelineEndFrame)
+                        val gapDurationUs = TimelineFrameMath.microsecondsFromFrames(gapFrames, project.settings.getFpsRational())
+                            ?: error("Timeline gap duration exceeds the supported media range.")
+                        val gapFile = blackGapFile ?: error("Could not create black-gap media for export.")
+                        val gapItem = MediaItem.Builder()
+                            .setUri(Uri.fromFile(gapFile))
+                            .setImageDurationMs((gapDurationUs / 1_000L).coerceAtLeast(1L))
+                            .build()
+                        add(
+                            EditedMediaItem.Builder(gapItem)
+                                .setDurationUs(gapDurationUs.coerceAtLeast(1L))
+                                .setFrameRate(job.settings.frameRate.floatValue.roundToInt().coerceAtLeast(1))
+                                .setRemoveAudio(true)
+                                .setEffects(
+                                    Effects(
+                                        emptyList(),
+                                        listOf(Presentation.createForWidthAndHeight(
+                                            job.settings.resolutionWidth,
+                                            job.settings.resolutionHeight,
+                                            Presentation.LAYOUT_SCALE_TO_FIT
+                                        ))
+                                    )
+                                )
+                                .build()
+                        )
+                    }
                 if (isCancelled()) throw CancellationException("Export was cancelled.")
                 val mcrawIntermediate = mcrawIntermediates[clipPlan.clipId]
                 val exportSourceUri = mcrawIntermediate?.sourceUri ?: clipPlan.sourceUri
@@ -375,7 +430,9 @@ class Media3TransformerBackend internal constructor(
                         .setDurationUs(Math.subtractExact(exportEndUs, exportStartUs).coerceAtLeast(1L))
                         .setFrameRate(job.settings.frameRate.floatValue.roundToInt().coerceAtLeast(1))
                 }
-                editedItemBuilder.build()
+                    add(editedItemBuilder.build())
+                    timelineEndFrame = Math.addExact(clipPlan.timelineStartFrame, clipPlan.timelineDurationFrames)
+                }
             }
             val composition = Composition.Builder(
                 EditedMediaItemSequence.Builder(editedItems).build()
@@ -506,6 +563,7 @@ class Media3TransformerBackend internal constructor(
                 }
             }
             mcrawTempDirectory?.deleteRecursively()
+            gapTempDirectory?.deleteRecursively()
             if (!succeeded) outputFile?.delete()
         }
     }
@@ -693,9 +751,7 @@ class Media3TransformerBackend internal constructor(
             var expectedTimelineStart = 0L
             orderedClips.forEach { active ->
                 val clip = active.clip
-                if (clip.timelineStart > expectedTimelineStart) {
-                    errors += "Video gaps are not supported by Media3; use Fix automatically to close the gap."
-                } else if (clip.timelineStart < expectedTimelineStart) {
+                if (clip.timelineStart < expectedTimelineStart) {
                     errors += "Overlapping clips, crossfades, and other NLE transitions are not supported; this export path is cut-only."
                 }
                 expectedTimelineStart = maxOf(expectedTimelineStart, clip.timelineEnd)
@@ -967,7 +1023,14 @@ class Media3TransformerBackend internal constructor(
             warnings += "Greater-than-8-bit SDR input will be converted to 8-bit H.264 output."
         }
         if (activeAssets.size > 1) {
-            warnings += "Video clips are exported as a sequential, cut-only Media3 composition after timeline gaps are closed."
+            if (project.tracks.filter { it.type == TrackType.VIDEO && it.isVisible }
+                    .flatMap { track -> track.clips.filter { it.isEnabled } }
+                    .sortedBy { it.timelineStart }
+                    .zipWithNext()
+                    .any { (first, second) -> second.timelineStart > first.timelineEnd }
+            ) {
+                warnings += "Empty timeline gaps are exported as black video."
+            }
             warnings += "Crossfades and other NLE transitions are not implemented by this export path."
         }
         return warnings
@@ -1000,6 +1063,8 @@ class Media3TransformerBackend internal constructor(
                 asset.mimeType.startsWith("image/")
             ExportClipPlan(
                 clipId = timelineClip.id,
+                timelineStartFrame = timelineClip.timelineStart,
+                timelineDurationFrames = timelineClip.duration,
                 sourceUri = sourceUri,
                 sourceStartFrame = sourceFrameRange.startFrame,
                 sourceEndFrameExclusive = sourceFrameRange.endFrameExclusive,
@@ -1012,10 +1077,10 @@ class Media3TransformerBackend internal constructor(
                 isImage = isImage
             )
         }
-        val totalDurationUs = clipPlans.fold(0L) { totalUs, clip ->
-            val clipDurationUs = Math.subtractExact(clip.endPositionUs, clip.startPositionUs)
-            Math.addExact(totalUs, clipDurationUs)
-        }
+        val timelineEndFrame = clipPlans.maxOfOrNull { clip ->
+            Math.addExact(clip.timelineStartFrame, clip.timelineDurationFrames)
+        } ?: 0L
+        val totalDurationUs = framesToUs(timelineEndFrame, projectFps)
         val outputFrames = framesAtRate(totalDurationUs, settings.frameRate)
         check(outputFrames > 0L) { "Validated export duration must produce at least one output frame." }
         val includeAudio = shouldIncludeEmbeddedAudio(

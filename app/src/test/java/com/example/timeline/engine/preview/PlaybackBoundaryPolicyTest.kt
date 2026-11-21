@@ -27,6 +27,15 @@ class PlaybackBoundaryPolicyTest {
     )
 
     @Test
+    fun gapBeforeNextClipKeepsPlaybackMovingThroughAnEmptyRange() {
+        val first = clip("first", start = 0L)
+        val next = clip("next", start = 35L)
+        val decision = playbackBoundaryDecision(project(first, next), first)
+
+        assertEquals(PlaybackBoundaryDecision.PlayThroughGap(gapStartFrame = 20L, nextClip = next), decision)
+    }
+
+    @Test
     fun finalClipStopsOnItsLastFrameInsteadOfWrappingOrReplaying() {
         val finalClip = clip("final", start = 40L)
         val decision = playbackBoundaryDecision(project(finalClip), finalClip)

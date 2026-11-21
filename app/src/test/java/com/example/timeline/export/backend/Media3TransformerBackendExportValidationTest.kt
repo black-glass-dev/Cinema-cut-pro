@@ -267,6 +267,20 @@ class Media3TransformerBackendExportValidationTest {
     }
 
     @Test
+    fun validationAcceptsTimelineGapsAndMoreThanSixClipsForBlackGapExport() {
+        val assets = (0 until 12).map { asset("source-$it") }
+        val clips = assets.mapIndexed { index, source ->
+            clip("clip-$index", source.assetId, index * 110L)
+        }
+        val backend = Media3TransformerBackend(applicationContext, CodecProbe())
+
+        val result = backend.validate(settings(), project(assets, clips))
+
+        assertTrue(result.unsupportedFeatures.joinToString("\n"), result.isValid)
+        assertTrue(result.warnings.any { it.contains("Empty timeline gaps are exported as black") })
+    }
+
+    @Test
     fun splitAndTrimmedMp4SegmentsPassSequentialExportValidation() {
         val source = asset("source")
         val firstSegment = clip("first-segment", source.assetId, 0L).copy(sourceIn = 20L, sourceOut = 60L)

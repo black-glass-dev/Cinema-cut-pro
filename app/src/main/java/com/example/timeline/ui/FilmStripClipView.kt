@@ -73,20 +73,23 @@ fun FilmStripClipView(
             )
         }
 
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .fillMaxWidth()
-                .padding(start = 8.dp, end = 18.dp, top = 5.dp)
-        ) {
-            Text(
-                text = mediaAsset?.displayName ?: clip.name,
-                color = Color.White,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+        timelineClipLabel(clip, mediaAsset, widthDp.value)?.let { label ->
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .fillMaxWidth()
+                    .padding(start = 8.dp, end = 18.dp, top = 5.dp)
+            ) {
+                Text(
+                    text = label,
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip
+                )
+            }
         }
         Text(
             text = String.format("%.1fs", durationSec),

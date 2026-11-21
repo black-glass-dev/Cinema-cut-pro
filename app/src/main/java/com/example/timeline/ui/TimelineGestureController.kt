@@ -21,6 +21,18 @@ sealed class TimelineDragAction {
 }
 
 object TimelineGestureController {
+    internal fun effectiveTrimHitRadius(clip: TimelineClip, pixelsPerFrame: Float, requestedRadiusPx: Float): Float {
+        if (!pixelsPerFrame.isFinite() || pixelsPerFrame <= 0f ||
+            !requestedRadiusPx.isFinite() || requestedRadiusPx <= 0f
+        ) return 0f
+        val widthPx = (clip.duration.toDouble() * pixelsPerFrame.toDouble())
+            .coerceIn(0.0, Float.MAX_VALUE.toDouble())
+            .toFloat()
+        // Preserve a central drag zone even for short clips: trim handles occupy at most
+        // one quarter of the clip width on either side.
+        return minOf(requestedRadiusPx, widthPx * 0.25f)
+    }
+
     internal fun trimActionAtEdge(
         clip: TimelineClip,
         tapX: Float,
@@ -93,7 +105,12 @@ object TimelineGestureController {
             .firstOrNull()
         val trimClip = hitClip ?: selectedClip
         if (TimelineCoreV2Adapter.isAvailable() && trimClip != null) {
-            TimelineGestureController.trimActionAtEdge(trimClip, tapX, pixelsPerFrame, trimHitRadiusPx)
+            TimelineGestureController.trimActionAtEdge(
+                trimClip,
+                tapX,
+                pixelsPerFrame,
+                effectiveTrimHitRadius(trimClip, pixelsPerFrame, trimHitRadiusPx)
+            )
                 ?.let { return it }
         }
 

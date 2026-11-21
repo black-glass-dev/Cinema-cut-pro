@@ -43,15 +43,17 @@ fun AdvancedTimelineClipView(
             .background(clipColor)
             .border(borderWidth, borderColor, RoundedCornerShape(4.dp))
     ) {
-        val name = mediaAsset?.displayName ?: clip.name
-        Text(
-            text = name,
-            color = Color.White,
-            fontSize = 10.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.align(Alignment.CenterStart).padding(horizontal = 8.dp)
-        )
+        timelineClipLabel(clip, mediaAsset, widthDp.value)?.let { label ->
+            Text(
+                text = label,
+                color = Color.White,
+                fontSize = 10.sp,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
+                modifier = Modifier.align(Alignment.CenterStart).padding(horizontal = 8.dp)
+            )
+        }
         
         if (isSelected) {
             // Left Trim Handle

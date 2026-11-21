@@ -45,6 +45,22 @@ class TimelineGestureControllerTest {
     }
 
     @Test
+    fun trimHitTargetsLeaveAClipCenterAvailableForDirectDragging() {
+        val clip = TimelineClip(
+            id = "short",
+            trackId = "video-track",
+            mediaId = "media",
+            name = "short.mp4",
+            sourceIn = 0L,
+            sourceOut = 60L,
+            timelineStart = 0L
+        )
+
+        assertEquals(15f, TimelineGestureController.effectiveTrimHitRadius(clip, 1f, 40f), 0f)
+        assertEquals(40f, TimelineGestureController.effectiveTrimHitRadius(clip, 4f, 40f), 0f)
+    }
+
+    @Test
     fun trimDragTargetsClampToLegalTimelineAndKnownSourceBounds() {
         val clip = TimelineClip(
             id = "clip",

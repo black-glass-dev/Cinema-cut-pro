@@ -118,6 +118,60 @@ fun PlayerViewContainer(
                         modifier = Modifier.fillMaxSize()
                     )
                 }
+                is StillFramePreviewEngine -> {
+                    AndroidView(
+                        factory = { context ->
+                            android.view.TextureView(context).apply {
+                                isOpaque = false
+                                surfaceTextureListener = object : android.view.TextureView.SurfaceTextureListener {
+                                    override fun onSurfaceTextureAvailable(
+                                        surfaceTexture: android.graphics.SurfaceTexture,
+                                        width: Int,
+                                        height: Int
+                                    ) {
+                                        val surface = android.view.Surface(surfaceTexture)
+                                        tag = surface
+                                        previewEngine.setSurface(surface)
+                                    }
+
+                                    override fun onSurfaceTextureSizeChanged(
+                                        surfaceTexture: android.graphics.SurfaceTexture,
+                                        width: Int,
+                                        height: Int
+                                    ) {
+                                        (tag as? android.view.Surface)?.let(previewEngine::setSurface)
+                                    }
+
+                                    override fun onSurfaceTextureDestroyed(
+                                        surfaceTexture: android.graphics.SurfaceTexture
+                                    ): Boolean {
+                                        previewEngine.setSurface(null)
+                                        (tag as? android.view.Surface)?.release()
+                                        tag = null
+                                        return true
+                                    }
+
+                                    override fun onSurfaceTextureUpdated(surfaceTexture: android.graphics.SurfaceTexture) = Unit
+                                }
+                            }
+                        },
+                        update = { view ->
+                            if (view.isAvailable && view.tag !is android.view.Surface) {
+                                view.surfaceTexture?.let { texture ->
+                                    val surface = android.view.Surface(texture)
+                                    view.tag = surface
+                                    previewEngine.setSurface(surface)
+                                }
+                            }
+                        },
+                        onRelease = { view ->
+                            previewEngine.setSurface(null)
+                            (view.tag as? android.view.Surface)?.release()
+                            view.tag = null
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
                 is com.example.timeline.engine.preview.Media3FallbackPreviewEngine -> {
                     AndroidView(
                         factory = { ctx ->

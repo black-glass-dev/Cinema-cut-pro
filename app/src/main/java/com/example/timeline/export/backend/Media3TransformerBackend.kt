@@ -131,7 +131,8 @@ class Media3TransformerBackend internal constructor(
         val startPositionUs: Long,
         val endPositionUs: Long,
         val adjustmentParams: VideoAdjustmentParams?,
-        val asset: MediaAsset
+        val asset: MediaAsset,
+        val isImage: Boolean
     )
 
     private data class McrawIntermediateClip(
@@ -342,15 +343,20 @@ class Media3TransformerBackend internal constructor(
                 val exportSourceUri = mcrawIntermediate?.sourceUri ?: clipPlan.sourceUri
                 val exportStartUs = mcrawIntermediate?.startPositionUs ?: clipPlan.startPositionUs
                 val exportEndUs = mcrawIntermediate?.endPositionUs ?: clipPlan.endPositionUs
-                val sourceItem = MediaItem.Builder()
-                    .setUri(exportSourceUri)
-                    .setClippingConfiguration(
+                val sourceItemBuilder = MediaItem.Builder().setUri(exportSourceUri)
+                if (clipPlan.isImage) {
+                    sourceItemBuilder.setImageDurationMs(
+                        (Math.subtractExact(exportEndUs, exportStartUs) / 1_000L).coerceAtLeast(1L)
+                    )
+                } else {
+                    sourceItemBuilder.setClippingConfiguration(
                         MediaItem.ClippingConfiguration.Builder()
                             .setStartPositionUs(exportStartUs)
                             .setEndPositionUs(exportEndUs)
                             .build()
                     )
-                    .build()
+                }
+                val sourceItem = sourceItemBuilder.build()
                 val videoEffects = buildList<Effect> {
                     clipPlan.adjustmentParams?.let { add(createMedia3ClipAdjustmentEffect(it)) }
                     add(
@@ -361,10 +367,15 @@ class Media3TransformerBackend internal constructor(
                         )
                     )
                 }
-                EditedMediaItem.Builder(sourceItem)
-                    .setRemoveAudio(!plan.includeAudio)
+                val editedItemBuilder = EditedMediaItem.Builder(sourceItem)
+                    .setRemoveAudio(!plan.includeAudio || clipPlan.isImage)
                     .setEffects(Effects(emptyList(), videoEffects))
-                    .build()
+                if (clipPlan.isImage) {
+                    editedItemBuilder
+                        .setDurationUs(Math.subtractExact(exportEndUs, exportStartUs).coerceAtLeast(1L))
+                        .setFrameRate(job.settings.frameRate.floatValue.roundToInt().coerceAtLeast(1))
+                }
+                editedItemBuilder.build()
             }
             val composition = Composition.Builder(
                 EditedMediaItemSequence.Builder(editedItems).build()
@@ -721,12 +732,14 @@ class Media3TransformerBackend internal constructor(
         activeClips.forEach { active ->
             val (clip, track, asset) = active
             val isMcraw = MotionCamRawFormat.isMcrawAsset(asset)
+            val isImage = asset.assetType == com.example.timeline.media.MediaAssetType.IMAGE ||
+                asset.mimeType.startsWith("image/")
             if (clip.type != ClipType.MEDIA) errors += "Only regular media clips can be exported by this path."
             if (clip.duration <= 0L) errors += "An active video clip has no duration."
-            if (!asset.metadata.hasVideo || asset.assetType != com.example.timeline.media.MediaAssetType.VIDEO) {
-                errors += "Every active timeline clip must reference imported video media."
+            if (!isImage && (!asset.metadata.hasVideo || asset.assetType != com.example.timeline.media.MediaAssetType.VIDEO)) {
+                errors += "Every active timeline clip must reference imported video media or a supported still image."
             }
-            if (asset.metadata.durationUs <= 0L) errors += "An imported video has no usable duration metadata."
+            if (asset.metadata.durationUs <= 0L) errors += "An imported video or still image has no usable duration metadata."
             if (isMcraw) {
                 val sourceFrameCount = asset.metadata.durationFramesInSourceRate
                 val trimRange = runCatching {
@@ -774,9 +787,9 @@ class Media3TransformerBackend internal constructor(
                     errors += "MotionCam RAW embedded PCM audio is not connected to the H.264/MP4 export path yet; turn off Include audio to export its video."
                 }
             }
-            if (asset.metadata.isVariableFrameRate) {
+            if (!isImage && asset.metadata.isVariableFrameRate) {
                 errors += "Variable-frame-rate media cannot be conformed to project FPS by this Media3 path yet; export is blocked and the original remains unchanged."
-            } else if (!asset.metadata.variableFrameRateDetectionComplete) {
+            } else if (!isImage && !asset.metadata.variableFrameRateDetectionComplete) {
                 errors += "Video timestamp cadence is unverified; reanalyze the source before export."
             }
             // MotionCam metadata describes high-bit-depth Bayer sensor samples, not an encoded
@@ -865,13 +878,13 @@ class Media3TransformerBackend internal constructor(
             }
 
             val expectedSourceFrameRate = asset.metadata.exactFrameRate ?: asset.metadata.estimatedFrameRate
-            if (expectedSourceFrameRate == null || !frameRatesMatch(expectedSourceFrameRate, settings.frameRate)) {
+            if (!isImage && (expectedSourceFrameRate == null || !frameRatesMatch(expectedSourceFrameRate, settings.frameRate))) {
                 errors += "Media3 preserves each source frame rate; set export FPS to match every constant-frame-rate source."
             }
             val sourceUriString = asset.localOriginalUriString?.takeIf { it.isNotBlank() } ?: asset.originalUriString
-            if (sourceUriString.isBlank()) errors += "An imported video has no readable source URI."
+            if (sourceUriString.isBlank()) errors += "An imported video or still image has no readable source URI."
 
-            if (settings.includeAudio && !track.isMuted) {
+            if (!isImage && settings.includeAudio && !track.isMuted) {
                 if (embeddedAudioPresent == null) {
                     embeddedAudioPresent = asset.metadata.hasAudio
                 } else if (embeddedAudioPresent != asset.metadata.hasAudio) {
@@ -899,10 +912,16 @@ class Media3TransformerBackend internal constructor(
         val includeAudio = shouldIncludeEmbeddedAudio(
             settings = settings,
             trackMuted = activeVideoTrack?.isMuted ?: true,
-            clipHasAudio = activeClips.map { it.asset.metadata.hasAudio }
+            clipHasAudio = activeClips.filterNot { active ->
+                active.asset.assetType == com.example.timeline.media.MediaAssetType.IMAGE ||
+                    active.asset.mimeType.startsWith("image/")
+            }.map { it.asset.metadata.hasAudio }
         )
         if (settings.includeAudio && activeVideoTrack?.isMuted == false && activeClips.isNotEmpty() &&
-            activeClips.none { it.asset.metadata.hasAudio }
+            activeClips.filterNot { active ->
+                active.asset.assetType == com.example.timeline.media.MediaAssetType.IMAGE ||
+                    active.asset.mimeType.startsWith("image/")
+            }.none { it.asset.metadata.hasAudio }
         ) {
             errors += "No embedded audio is available; turn off Include audio to export a silent video."
         }
@@ -977,17 +996,20 @@ class Media3TransformerBackend internal constructor(
             } else {
                 SourceFrameRange(timelineClip.sourceIn, timelineClip.sourceOut)
             }
+            val isImage = asset.assetType == com.example.timeline.media.MediaAssetType.IMAGE ||
+                asset.mimeType.startsWith("image/")
             ExportClipPlan(
                 clipId = timelineClip.id,
                 sourceUri = sourceUri,
                 sourceStartFrame = sourceFrameRange.startFrame,
                 sourceEndFrameExclusive = sourceFrameRange.endFrameExclusive,
-                startPositionUs = startPositionUs,
-                endPositionUs = endPositionUs,
+                startPositionUs = if (isImage) 0L else startPositionUs,
+                endPositionUs = if (isImage) framesToUs(timelineClip.duration, projectFps) else endPositionUs,
                 adjustmentParams = effectiveAdjustmentParams(timelineClip).takeIf { params ->
                     Media3ClipAdjustmentSupport.hasRenderableAdjustments(params)
                 },
-                asset = asset
+                asset = asset,
+                isImage = isImage
             )
         }
         val totalDurationUs = clipPlans.fold(0L) { totalUs, clip ->

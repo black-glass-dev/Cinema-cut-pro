@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import com.example.ui.editor.EditorViewModel
 import com.example.timeline.core.CoreV2RippleScope
 import kotlinx.coroutines.launch
+import android.widget.Toast
 
 import com.example.timeline.engine.preview.TimelinePreviewController
 
@@ -41,7 +42,21 @@ fun AdvancedTimelineScreen(
     val density = androidx.compose.ui.platform.LocalDensity.current.density
 
     val playheadFrameFlow = editorViewModel.playheadFrame
+    val playheadFrame by playheadFrameFlow.collectAsState()
     val isPlaying by timelineViewModel.isPlaying.collectAsState()
+    val actionScope = rememberCoroutineScope()
+    val selectedVideoClip = uiState.selectedClipId?.let { selectedId ->
+        uiState.project.tracks.asSequence()
+            .filter { it.type == com.example.timeline.core.TrackType.VIDEO && it.isVisible }
+            .flatMap { it.clips.asSequence() }
+            .firstOrNull { it.id == selectedId && it.isEnabled }
+    }
+    val canEditAtPlayhead = selectedVideoClip?.let { clip ->
+        playheadFrame > clip.timelineStart && playheadFrame < clip.timelineEnd
+    } == true
+    val selectedAssetHasVideo = selectedVideoClip?.let { clip ->
+        uiState.project.mediaAssets.firstOrNull { it.assetId == clip.mediaId }?.metadata?.hasVideo == true
+    } == true
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -54,6 +69,29 @@ fun AdvancedTimelineScreen(
                 onClose = onClose,
                 onUndo = { timelineViewModel.undo() },
                 onRedo = { timelineViewModel.redo() },
+                canUndo = uiState.canUndo,
+                canRedo = uiState.canRedo,
+                canEditAtPlayhead = canEditAtPlayhead,
+                canInsertFreezeFrame = canEditAtPlayhead && selectedAssetHasVideo,
+                onTrimLeft = { timelineViewModel.trimSelectedClipToPlayhead(start = true) },
+                onTrimRight = { timelineViewModel.trimSelectedClipToPlayhead(start = false) },
+                onSplit = { timelineViewModel.splitAtPlayhead() },
+                onSplitAndInsertFreezeFrame = {
+                    actionScope.launch {
+                        val bitmap = timelinePreviewController.extractCurrentFrameBitmap()
+                        if (bitmap == null) {
+                            Toast.makeText(context, "Could not capture the frame at the playhead.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            try {
+                                if (!timelineViewModel.splitAndInsertFreezeFrame(bitmap)) {
+                                    Toast.makeText(context, "Move the playhead inside the selected video clip and try again.", Toast.LENGTH_SHORT).show()
+                                }
+                            } finally {
+                                bitmap.recycle()
+                            }
+                        }
+                    }
+                },
                 snapEnabled = snapEnabled,
                 onToggleSnap = { 
                     snapEnabled = !snapEnabled

@@ -128,6 +128,7 @@ class TimelinePreviewController(private val context: Context) {
     private var pendingBoundaryClipId: String? = null
     private var handledEndEngine: PreviewEngine? = null
     private var handledEndClipId: String? = null
+    private var stillPlaybackJob: Job? = null
 
     private val scope = CoroutineScope(Dispatchers.Main + Job())
     private var playheadJob: Job? = null
@@ -347,6 +348,8 @@ class TimelinePreviewController(private val context: Context) {
     }
 
     fun seekToTimelineFrame(project: TimelineProject, frame: Long, forceSeek: Boolean = true) {
+        stillPlaybackJob?.cancel()
+        stillPlaybackJob = null
         if (activeProject?.id != project.id) {
             loadProject(project)
         } else {
@@ -391,13 +394,25 @@ class TimelinePreviewController(private val context: Context) {
         }
 
         val isMcraw = com.example.timeline.media.MotionCamRawFormat.isMcrawAsset(asset)
-        if (isMcraw && previewEngine.engineType != PreviewEngineType.MOTIONCAM_RAW) {
-            switchEngineType(PreviewEngineType.MOTIONCAM_RAW)
-            return
-        }
-        if (!isMcraw && previewEngine.engineType == PreviewEngineType.MOTIONCAM_RAW) {
-            switchEngineType(preferredEngineType)
-            return
+        val isImage = asset.assetType == com.example.timeline.media.MediaAssetType.IMAGE ||
+            asset.mimeType.startsWith("image/")
+        when {
+            isMcraw && previewEngine.engineType != PreviewEngineType.MOTIONCAM_RAW -> {
+                switchEngineType(PreviewEngineType.MOTIONCAM_RAW)
+                return
+            }
+            !isMcraw && previewEngine.engineType == PreviewEngineType.MOTIONCAM_RAW -> {
+                switchEngineType(if (isImage) PreviewEngineType.STILL_FRAME else preferredEngineType)
+                return
+            }
+            isImage && previewEngine.engineType != PreviewEngineType.STILL_FRAME -> {
+                switchEngineType(PreviewEngineType.STILL_FRAME)
+                return
+            }
+            !isImage && previewEngine.engineType == PreviewEngineType.STILL_FRAME -> {
+                switchEngineType(preferredEngineType)
+                return
+            }
         }
 
         val rat = project.settings.getFpsRational()
@@ -434,6 +449,47 @@ class TimelinePreviewController(private val context: Context) {
         }
     }
 
+    private fun startStillClipPlayback(project: TimelineProject, clip: TimelineClip) {
+        stillPlaybackJob?.cancel()
+        val engine = previewEngine
+        val startFrame = lastPlayheadFrame.coerceIn(
+            clip.timelineStart,
+            (clip.timelineEnd - 1L).coerceAtLeast(clip.timelineStart)
+        )
+        val startElapsedMs = android.os.SystemClock.elapsedRealtime()
+        val frameRate = project.settings.getFpsRational()
+        engine.play()
+        stillPlaybackJob = scope.launch {
+            try {
+                while (previewEngine === engine && activeProject?.id == project.id && activeClip.value?.id == clip.id) {
+                    val elapsedMs = android.os.SystemClock.elapsedRealtime() - startElapsedMs
+                    val elapsedFrames = try {
+                        Math.multiplyExact(elapsedMs, frameRate.numerator.toLong()) /
+                            (1_000L * frameRate.denominator.toLong())
+                    } catch (_: ArithmeticException) {
+                        Long.MAX_VALUE
+                    }
+                    val frame = try {
+                        Math.addExact(startFrame, elapsedFrames)
+                    } catch (_: ArithmeticException) {
+                        Long.MAX_VALUE
+                    }
+                    if (frame >= clip.timelineEnd) break
+                    if (frame > lastPlayheadFrame) {
+                        lastPlayheadFrame = frame
+                        onPlayheadAdvanced?.invoke(frame)
+                    }
+                    delay(16L)
+                }
+                if (previewEngine === engine && activeProject?.id == project.id && activeClip.value?.id == clip.id) {
+                    handlePlaybackBoundary(engine, project, clip)
+                }
+            } finally {
+                if (stillPlaybackJob?.isActive != true) stillPlaybackJob = null
+            }
+        }
+    }
+
     fun play() {
         handledEndEngine = null
         handledEndClipId = null
@@ -441,10 +497,22 @@ class TimelinePreviewController(private val context: Context) {
         if (clip != null && lastPlayheadFrame >= clip.timelineEnd - 1) {
             seekToTimelineFrame(activeProject!!, clip.timelineStart)
         }
+        val activeProject = activeProject
+        val activeClip = _activeClip.value
+        val activeAsset = _activeAsset.value
+        if (activeProject != null && activeClip != null && activeAsset != null &&
+            (activeAsset.assetType == com.example.timeline.media.MediaAssetType.IMAGE ||
+                activeAsset.mimeType.startsWith("image/"))
+        ) {
+            startStillClipPlayback(activeProject, activeClip)
+            return
+        }
         previewEngine.play()
     }
 
     fun pause() {
+        stillPlaybackJob?.cancel()
+        stillPlaybackJob = null
         previewEngine.pause()
     }
 
@@ -453,6 +521,8 @@ class TimelinePreviewController(private val context: Context) {
     }
 
     fun stop() {
+        stillPlaybackJob?.cancel()
+        stillPlaybackJob = null
         previewEngine.pause()
         val eng = previewEngine
         when (eng) {
@@ -522,6 +592,8 @@ class TimelinePreviewController(private val context: Context) {
         onPlaybackEnded = null
         playheadJob?.cancel()
         playheadJob = null
+        stillPlaybackJob?.cancel()
+        stillPlaybackJob = null
         scope.cancel()
         pendingEngineReleases.toList().forEach(::releasePendingEngine)
         previewEngine.onTimeChanged = null

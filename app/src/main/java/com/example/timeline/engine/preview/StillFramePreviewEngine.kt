@@ -2,6 +2,7 @@ package com.example.timeline.engine.preview
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Rect
@@ -42,6 +43,7 @@ class StillFramePreviewEngine(private val context: Context) : PreviewEngine {
 
     private var surface: Surface? = null
     private var currentUri: String? = null
+    private var currentMimeType: String? = null
     private var currentPositionMs: Long = 0L
     private var durationMs: Long = 0L
     private var currentParams: VideoAdjustmentParams? = null
@@ -74,6 +76,7 @@ class StillFramePreviewEngine(private val context: Context) : PreviewEngine {
     ) {
         val uriChanged = uriString != currentUri
         currentUri = uriString
+        currentMimeType = mimeType?.substringBefore(';')?.trim()
         currentPositionMs = sourcePositionMs
         currentParams = evaluatedParams
 
@@ -117,28 +120,39 @@ class StillFramePreviewEngine(private val context: Context) : PreviewEngine {
             try {
                 // 1. Fetch raw frame if needed
                 if (cachedSourceBitmap == null || cachedUri != uriToLoad || cachedTimeMs != timeMsToLoad) {
-                    val mmr = MediaMetadataRetriever()
-                    try {
-                        mmr.setDataSource(context, Uri.parse(uriToLoad))
-                        // Try to get scaled down frame to avoid OOM and speed up grading
-                        // For a small preview, 480p or 720p is enough.
-                        val rawBitmap = mmr.getFrameAtTime(timeMsToLoad * 1000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                        if (rawBitmap != null) {
-                            val scaledWidth = 640
-                            val scaledHeight = (rawBitmap.height * (640f / rawBitmap.width)).toInt()
-                            val scaledBitmap = Bitmap.createScaledBitmap(rawBitmap, scaledWidth, scaledHeight, true)
-                            if (scaledBitmap != rawBitmap) {
-                                rawBitmap.recycle()
+                    var rawBitmap: Bitmap? = null
+                    if (currentMimeType?.startsWith("image/") == true) {
+                        rawBitmap = runCatching {
+                            context.contentResolver.openInputStream(Uri.parse(uriToLoad))?.use { stream ->
+                                BitmapFactory.decodeStream(stream)
                             }
-                            cachedSourceBitmap?.recycle()
-                            cachedSourceBitmap = scaledBitmap
-                            cachedUri = uriToLoad
-                            cachedTimeMs = timeMsToLoad
+                        }.getOrNull()
+                    } else {
+                        val mmr = MediaMetadataRetriever()
+                        try {
+                            mmr.setDataSource(context, Uri.parse(uriToLoad))
+                            rawBitmap = mmr.getFrameAtTime(
+                                timeMsToLoad * 1000,
+                                MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                            )
+                        } catch (e: Exception) {
+                            if (com.example.BuildConfig.DEBUG) e.printStackTrace()
+                        } finally {
+                            mmr.release()
                         }
-                    } catch (e: Exception) {
-                        if (com.example.BuildConfig.DEBUG) e.printStackTrace()
-                    } finally {
-                        mmr.release()
+                    }
+                    if (rawBitmap != null) {
+                        val scale = minOf(1f, 640f / maxOf(rawBitmap.width, rawBitmap.height).toFloat())
+                        val scaledWidth = (rawBitmap.width * scale).toInt().coerceAtLeast(1)
+                        val scaledHeight = (rawBitmap.height * scale).toInt().coerceAtLeast(1)
+                        val scaledBitmap = if (scale < 1f) {
+                            Bitmap.createScaledBitmap(rawBitmap, scaledWidth, scaledHeight, true)
+                        } else rawBitmap
+                        if (scaledBitmap !== rawBitmap) rawBitmap.recycle()
+                        cachedSourceBitmap?.recycle()
+                        cachedSourceBitmap = scaledBitmap
+                        cachedUri = uriToLoad
+                        cachedTimeMs = timeMsToLoad
                     }
                 }
 

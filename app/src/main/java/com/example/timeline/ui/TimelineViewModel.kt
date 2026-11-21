@@ -1093,6 +1093,137 @@ class TimelineViewModel(context: Context) : ViewModel() {
         if (outcome is CoreV2EditOutcome.Applied && outcome.project != state.project) selectClip(null)
     }
 
+    /** Splits the selected video at the playhead and inserts a two-second still, rippling later clips. */
+    suspend fun splitAndInsertFreezeFrame(frameBitmap: android.graphics.Bitmap): Boolean {
+        val initialState = _uiState.value
+        val selectedClipId = initialState.selectedClipId ?: return false
+        val selected = findClipAndTrack(initialState.project, selectedClipId) ?: return false
+        val track = selected.first
+        val clip = selected.second
+        val frame = _playheadFrame.value
+        if (track.type != TrackType.VIDEO || track.isLocked || clip.isLocked || !clip.isEnabled ||
+            frame <= clip.timelineStart || frame >= clip.timelineEnd
+        ) return false
+
+        val frameRate = initialState.project.settings.getFpsRational()
+        val freezeDurationFrames = TimelineFrameMath.framesFromMilliseconds(2_000L, frameRate)
+            ?.takeIf { it > 0L } ?: return false
+        try {
+            Math.addExact(frame, freezeDurationFrames)
+        } catch (_: ArithmeticException) {
+            return false
+        }
+        val freezeDurationUs = TimelineFrameMath.microsecondsFromFrames(freezeDurationFrames, frameRate)
+            ?.takeIf { it > 0L } ?: return false
+        val freezeId = UUID.randomUUID().toString()
+        val assetId = UUID.randomUUID().toString()
+        val freezeFile = File(contextRef.filesDir, "freeze_frames/${initialState.project.id}/$freezeId.png")
+        val sourceWidth = frameBitmap.width.coerceAtLeast(1)
+        val sourceHeight = frameBitmap.height.coerceAtLeast(1)
+        val scale = minOf(1f, 1920f / maxOf(sourceWidth, sourceHeight).toFloat())
+        val freezeWidth = (sourceWidth * scale).toInt().coerceAtLeast(1)
+        val freezeHeight = (sourceHeight * scale).toInt().coerceAtLeast(1)
+        val storedBitmap = if (scale < 1f) {
+            android.graphics.Bitmap.createScaledBitmap(
+                frameBitmap,
+                freezeWidth,
+                freezeHeight,
+                true
+            )
+        } else frameBitmap
+
+        val fileCreated = withContext(Dispatchers.IO) {
+            runCatching {
+                freezeFile.parentFile?.mkdirs()
+                freezeFile.outputStream().use { output ->
+                    check(storedBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output))
+                }
+                freezeFile.isFile && freezeFile.length() > 0L
+            }.getOrDefault(false)
+        }
+        if (storedBitmap !== frameBitmap) storedBitmap.recycle()
+        if (!fileCreated) {
+            freezeFile.delete()
+            return false
+        }
+
+        try {
+            val currentState = _uiState.value
+            if (currentState.project.id != initialState.project.id ||
+                currentState.selectedClipId != selectedClipId || _playheadFrame.value != frame
+            ) return false
+
+            val freezeAsset = com.example.timeline.media.MediaAsset(
+                assetId = assetId,
+                projectId = initialState.project.id,
+                displayName = "Freeze frame.png",
+                originalUriString = Uri.fromFile(freezeFile).toString(),
+                persistedUriPermission = false,
+                mimeType = "image/png",
+                fileSizeBytes = freezeFile.length(),
+                importedAt = System.currentTimeMillis(),
+                modifiedAt = System.currentTimeMillis(),
+                assetType = com.example.timeline.media.MediaAssetType.IMAGE,
+                metadata = com.example.timeline.media.MediaMetadata(
+                    durationUs = freezeDurationUs,
+                    durationFramesInSourceRate = freezeDurationFrames,
+                    containerFormat = "PNG",
+                    bitrate = 0L,
+                    width = freezeWidth,
+                    height = freezeHeight,
+                    rotationDegrees = 0,
+                    pixelAspectRatio = 1f,
+                    videoStreams = emptyList(),
+                    audioStreams = emptyList(),
+                    hasVideo = false,
+                    hasAudio = false,
+                    isVariableFrameRate = false,
+                    estimatedFrameRate = null,
+                    exactFrameRate = null,
+                    timecodeStart = null,
+                    creationTime = System.currentTimeMillis(),
+                    variableFrameRateDetectionComplete = true
+                )
+            )
+            val freezeClip = TimelineClip(
+                id = freezeId,
+                trackId = track.id,
+                mediaId = assetId,
+                name = "Freeze frame",
+                sourceIn = 0L,
+                sourceOut = freezeDurationFrames,
+                timelineStart = frame
+            )
+            val splitCommands = SplitClipCommand(
+                clipId = clip.id,
+                splitFrame = frame,
+                splitLinkedAudio = true
+            ).nativeEditCommands(currentState.project)
+            if (splitCommands.isEmpty()) return false
+            val commands = splitCommands + CoreV2EditCommand(
+                kind = CoreV2EditKind.INSERT,
+                targetTrackId = track.id,
+                insertedClip = freezeClip,
+                ripple = CoreV2RippleScope.ALL_TRACKS
+            )
+            val projectWithFreezeAsset = currentState.project.copy(
+                mediaAssets = currentState.project.mediaAssets + freezeAsset
+            )
+            val outcome = commitNativeTimelineEdits(
+                projectForEdit = projectWithFreezeAsset,
+                commands = commands,
+                commandName = "Split and Insert Freeze Frame",
+                affectedClipIds = listOf(clip.id, freezeId)
+            )
+            if (outcome !is CoreV2EditOutcome.Applied || outcome.project == currentState.project) return false
+            _playheadFrame.value = frame
+            _uiState.update { it.copy(selectedClipId = freezeId, selectedClipIds = setOf(freezeId)) }
+            return true
+        } finally {
+            if (_uiState.value.project.mediaAssets.none { it.assetId == assetId }) freezeFile.delete()
+        }
+    }
+
     fun moveSelectedClip(newStartFrame: Long) {
         val clipId = _uiState.value.selectedClipId ?: return
         moveClip(clipId, newStartFrame)

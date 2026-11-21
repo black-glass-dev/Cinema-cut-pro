@@ -15,7 +15,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -27,6 +29,8 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -37,11 +41,16 @@ fun TimelineToolbar(
     canRedo: Boolean,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
+    onTrimLeft: () -> Unit,
+    onTrimRight: () -> Unit,
     onSplit: () -> Unit,
+    onSplitAndInsertFreezeFrame: () -> Unit,
     onDelete: () -> Unit,
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
     hasSelection: Boolean,
+    canEditAtPlayhead: Boolean,
+    canInsertFreezeFrame: Boolean,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -78,21 +87,30 @@ fun TimelineToolbar(
                 color = TimelineDesignTokens.Divider
             )
 
-            Button(
-                onClick = onSplit,
-                enabled = hasSelection,
-                shape = RoundedCornerShape(9.dp),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                modifier = Modifier.height(40.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = TimelineDesignTokens.ToolbarButton,
-                    contentColor = androidx.compose.ui.graphics.Color.White,
-                    disabledContainerColor = TimelineDesignTokens.ToolbarButton,
-                    disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-                )
-            ) {
-                Text("Split", fontWeight = FontWeight.Medium, fontSize = 12.sp)
-            }
+            TimelineActionButton(
+                icon = Icons.AutoMirrored.Filled.ArrowBack,
+                label = "Trim Left",
+                enabled = canEditAtPlayhead,
+                onClick = onTrimLeft
+            )
+            TimelineActionButton(
+                icon = Icons.AutoMirrored.Filled.ArrowForward,
+                label = "Trim Right",
+                enabled = canEditAtPlayhead,
+                onClick = onTrimRight
+            )
+            TimelineActionButton(
+                icon = Icons.Default.ContentCut,
+                label = "Split",
+                enabled = canEditAtPlayhead,
+                onClick = onSplit
+            )
+            TimelineActionButton(
+                icon = Icons.Default.Photo,
+                label = "Split + Freeze",
+                enabled = canInsertFreezeFrame,
+                onClick = onSplitAndInsertFreezeFrame
+            )
 
             IconButton(
                 onClick = onDelete,
@@ -109,19 +127,44 @@ fun TimelineToolbar(
             )
 
             IconButton(onClick = onZoomOut, modifier = Modifier.size(40.dp), colors = toolbarIconColors()) {
-                Text("−", color = androidx.compose.ui.graphics.Color.White, fontSize = 22.sp)
+                Text("−", color = Color.White, fontSize = 22.sp)
             }
             IconButton(onClick = onZoomIn, modifier = Modifier.size(40.dp), colors = toolbarIconColors()) {
-                Text("+", color = androidx.compose.ui.graphics.Color.White, fontSize = 20.sp)
+                Text("+", color = Color.White, fontSize = 20.sp)
             }
         }
     }
 }
 
 @Composable
+private fun TimelineActionButton(
+    icon: ImageVector,
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(9.dp),
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+        modifier = Modifier.height(38.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = TimelineDesignTokens.ToolbarButton,
+            contentColor = Color.White,
+            disabledContainerColor = TimelineDesignTokens.ToolbarButton,
+            disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+        )
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
+        Text(label, modifier = Modifier.padding(start = 4.dp), fontWeight = FontWeight.Medium, fontSize = 10.sp)
+    }
+}
+
+@Composable
 private fun toolbarIconColors(destructive: Boolean = false) = IconButtonDefaults.iconButtonColors(
     containerColor = TimelineDesignTokens.ToolbarButton,
-    contentColor = if (destructive) TimelineDesignTokens.Accent else androidx.compose.ui.graphics.Color.White,
+    contentColor = if (destructive) TimelineDesignTokens.Accent else Color.White,
     disabledContainerColor = TimelineDesignTokens.ToolbarButton,
-    disabledContentColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.28f)
+    disabledContentColor = Color.White.copy(alpha = 0.28f)
 )

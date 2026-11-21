@@ -240,6 +240,33 @@ class Media3TransformerBackendExportValidationTest {
     }
 
     @Test
+    fun stillImageClipFromFreezeFrameCanBeExportedInVideoSequence() {
+        val freeze = asset("freeze").copy(
+            displayName = "Freeze frame.png",
+            originalUriString = "file:///tmp/freeze.png",
+            mimeType = "image/png",
+            assetType = MediaAssetType.IMAGE,
+            metadata = asset("freeze").metadata.copy(
+                containerFormat = "PNG",
+                videoStreams = emptyList(),
+                audioStreams = emptyList(),
+                hasVideo = false,
+                hasAudio = false,
+                exactFrameRate = null,
+                estimatedFrameRate = null,
+                variableFrameRateDetectionComplete = true
+            )
+        )
+        val backend = Media3TransformerBackend(applicationContext, CodecProbe())
+        val result = backend.validate(
+            settings(includeAudio = false),
+            project(listOf(freeze), listOf(clip("freeze-clip", freeze.assetId, 0L)))
+        )
+
+        assertTrue(result.unsupportedFeatures.joinToString("\n"), result.isValid)
+    }
+
+    @Test
     fun splitAndTrimmedMp4SegmentsPassSequentialExportValidation() {
         val source = asset("source")
         val firstSegment = clip("first-segment", source.assetId, 0L).copy(sourceIn = 20L, sourceOut = 60L)

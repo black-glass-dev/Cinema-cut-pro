@@ -30,7 +30,8 @@ fun EditorBottomPanel(
             )
             else -> TimelineSection(
                 timelineViewModel = timelineViewModel,
-                editorViewModel = editorViewModel
+                editorViewModel = editorViewModel,
+                timelinePreviewController = timelinePreviewController
             )
         }
     }

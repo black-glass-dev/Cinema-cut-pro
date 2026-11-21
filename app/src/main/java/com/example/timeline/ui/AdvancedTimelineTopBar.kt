@@ -4,7 +4,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PlayArrow
@@ -32,6 +35,14 @@ fun AdvancedTimelineTopBar(
     onClose: () -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
+    canUndo: Boolean,
+    canRedo: Boolean,
+    canEditAtPlayhead: Boolean,
+    canInsertFreezeFrame: Boolean,
+    onTrimLeft: () -> Unit,
+    onTrimRight: () -> Unit,
+    onSplit: () -> Unit,
+    onSplitAndInsertFreezeFrame: () -> Unit,
     snapEnabled: Boolean,
     onToggleSnap: () -> Unit,
     linkedSelection: Boolean,
@@ -65,11 +76,23 @@ fun AdvancedTimelineTopBar(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            IconButton(onClick = onUndo) {
+            IconButton(onClick = onUndo, enabled = canUndo) {
                 Icon(Icons.AutoMirrored.Filled.Undo, "Undo", tint = Color.White)
             }
-            IconButton(onClick = onRedo) {
+            IconButton(onClick = onRedo, enabled = canRedo) {
                 Icon(Icons.AutoMirrored.Filled.Redo, "Redo", tint = Color.White)
+            }
+            IconButton(onClick = onTrimLeft, enabled = canEditAtPlayhead) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Trim Left to Playhead", tint = Color.White)
+            }
+            IconButton(onClick = onTrimRight, enabled = canEditAtPlayhead) {
+                Icon(Icons.AutoMirrored.Filled.ArrowForward, "Trim Right to Playhead", tint = Color.White)
+            }
+            IconButton(onClick = onSplit, enabled = canEditAtPlayhead) {
+                Icon(Icons.Default.ContentCut, "Split at Playhead", tint = Color.White)
+            }
+            IconButton(onClick = onSplitAndInsertFreezeFrame, enabled = canInsertFreezeFrame) {
+                Icon(Icons.Default.Photo, "Split and Insert Freeze Frame", tint = Color.White)
             }
 
             VerticalDivider(modifier = Modifier.height(24.dp).padding(horizontal = 8.dp), color = Color.Gray)

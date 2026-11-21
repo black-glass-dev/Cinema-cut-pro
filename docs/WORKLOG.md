@@ -245,3 +245,8 @@ Done: corrected the native-unavailable gesture ordering after the first CI run e
 Evidence: Android CI run `44875144609` PASS on `686fa62` for Kotlin/native compilation, all JVM tests, native host tests, and FFmpeg checks; no APK was produced because this push did not request release publication.
 Remaining: launcher appearance, trim gestures, and playback across sequential/overlapping videos remain UNVERIFIED on handset; the source boundary policy clamps frames and chooses the next visible clip.
 Next: publish the approved debug test APK from this branch so the user can verify the launcher, edge trimming, and multi-video playback on-device.
+## 2026-10-10 — Timeline fix APK #118 handoff
+Done: published installable debug test APK #118 from source `72e086c` after the follow-up compile/JVM/native/FFmpeg gates passed.
+Evidence: CI run `44875799580` PASS; APK `Cinema-Cut-Pro-debug-118-1.apk` (90,122,377 bytes), release https://github.com/black-glass-dev/Cinema-cut-pro/releases/tag/android-test-118-1; SHA-256 sidecar is attached.
+Remaining: device appearance, launcher icon, trim gestures, and reported playback-boundary behavior remain UNVERIFIED; the playhead/preview sequence boundary still needs handset reproduction.
+Next: install APK #118 and report whether the icon is correct, left/right edge drags trim, and playback behaves correctly across the clips.

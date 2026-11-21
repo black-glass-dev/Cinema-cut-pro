@@ -195,7 +195,6 @@ fun ChromaProApp() {
                     scopeViewModel = scopeViewModel,
                     editorViewModel = editorViewModel,
                     timelinePreviewController = timelinePreviewController,
-                    launchers = importLaunchers,
                     onRelinkRequest = { assetId ->
                         relinkAssetId = assetId
                         relinkLauncher.launch(arrayOf("*/*"))

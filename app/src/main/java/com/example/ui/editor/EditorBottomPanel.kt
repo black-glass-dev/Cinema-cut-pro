@@ -17,8 +17,6 @@ fun EditorBottomPanel(
     scopeViewModel: ScopeViewModel,
     timelinePreviewController: TimelinePreviewController,
     editorViewModel: EditorViewModel,
-    launchers: com.example.timeline.ui.MediaImportLaunchers,
-    onRelinkRequest: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier.fillMaxWidth()) {
@@ -32,9 +30,7 @@ fun EditorBottomPanel(
             )
             else -> TimelineSection(
                 timelineViewModel = timelineViewModel,
-                editorViewModel = editorViewModel,
-                launchers = launchers,
-                onRelinkRequest = onRelinkRequest
+                editorViewModel = editorViewModel
             )
         }
     }

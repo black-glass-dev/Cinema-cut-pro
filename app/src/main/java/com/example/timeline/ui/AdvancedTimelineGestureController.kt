@@ -38,30 +38,37 @@ object AdvancedTimelineGestureController {
         pixelsPerFrame: Float,
         selectedClipIds: Set<String>,
         playheadFrame: Long = 0L,
-        playheadHitRadiusPx: Float = 24f
+        playheadHitRadiusPx: Float = 24f,
+        trimHitRadiusPx: Float = 40f,
+        trackHeightPx: Float = 80f,
+        trackPaddingPx: Float = 12f
     ): TimelineDragAction {
-        val playheadX = TimelineUiGeometry.frameToX(playheadFrame, pixelsPerFrame) - scrollX
-        if (startOffset.y < rulerHeightPx ||
-            (playheadHitRadiusPx.isFinite() && playheadHitRadiusPx >= 0f &&
-                startOffset.x.isFinite() && kotlin.math.abs(startOffset.x - playheadX) <= playheadHitRadiusPx)
-        ) return TimelineDragAction.ScrubPlayhead
+        if (startOffset.y < rulerHeightPx) return TimelineDragAction.ScrubPlayhead
         if (!TimelineCoreV2Adapter.isAvailable()) return TimelineDragAction.Pan(scrollX, scrollY)
 
         val tapX = startOffset.x + scrollX
         val tapY = startOffset.y + scrollY - rulerHeightPx
-        val hitClip = hitTest(tapX, tapY, project, pixelsPerFrame)
-        if (!TimelineCoreV2Adapter.isAvailable()) return TimelineDragAction.Pan(scrollX, scrollY)
+        val hitClip = hitTest(tapX, tapY, project, pixelsPerFrame, trackHeightPx, trackPaddingPx)
+        val selectedClip = project.tracks.withIndex().asSequence()
+            .flatMap { (index, track) ->
+                val trackTop = index * (trackHeightPx + trackPaddingPx)
+                if (tapY in trackTop..(trackTop + trackHeightPx)) {
+                    track.clips.asSequence().filter { it.id in selectedClipIds }
+                } else emptySequence()
+            }
+            .firstOrNull()
+        val trimClip = hitClip ?: selectedClip
+        if (trimClip != null) {
+            TimelineGestureController.trimActionAtEdge(trimClip, tapX, pixelsPerFrame, trimHitRadiusPx)
+                ?.let { return it }
+        }
+
+        val playheadX = TimelineUiGeometry.frameToX(playheadFrame, pixelsPerFrame) - scrollX
+        if (playheadHitRadiusPx.isFinite() && playheadHitRadiusPx >= 0f &&
+            startOffset.x.isFinite() && kotlin.math.abs(startOffset.x - playheadX) <= playheadHitRadiusPx
+        ) return TimelineDragAction.ScrubPlayhead
         if (hitClip == null) return TimelineDragAction.Pan(scrollX, scrollY)
 
-        val left = TimelineUiGeometry.frameToX(hitClip.timelineStart, pixelsPerFrame)
-        val right = TimelineUiGeometry.frameToX(hitClip.timelineEnd, pixelsPerFrame)
-        val trimThreshold = 40f
-        if (hitClip.id in selectedClipIds && tapX - left < trimThreshold) {
-            return TimelineDragAction.TrimStart(hitClip, hitClip.timelineStart)
-        }
-        if (hitClip.id in selectedClipIds && right - tapX < trimThreshold) {
-            return TimelineDragAction.TrimEnd(hitClip, hitClip.timelineEnd)
-        }
         val startFrame = TimelineUiGeometry.xToFrame(tapX, pixelsPerFrame)
         val offsetFrames = try {
             Math.subtractExact(startFrame, hitClip.timelineStart)

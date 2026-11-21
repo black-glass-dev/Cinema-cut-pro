@@ -17,14 +17,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
-fun TimelineScreen(viewModel: TimelineViewModel, editorViewModel: com.example.ui.editor.EditorViewModel, onImportClick: () -> Unit = {}) {
+fun TimelineScreen(viewModel: TimelineViewModel, editorViewModel: com.example.ui.editor.EditorViewModel) {
     val uiState by viewModel.uiState.collectAsState()
-    val proxyProgress by viewModel.proxyProgress.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
-
-    val launchers = rememberMediaImportLaunchers(
-        onUrisPicked = { uris -> viewModel.handlePickedUris(uris) }
-    )
 
     var relinkAssetId by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
     val relinkLauncher = rememberLauncherForActivityResult<Array<String>, List<android.net.Uri>>(com.example.timeline.media.MediaPickerContract.OpenMultiple) { uris ->
@@ -43,7 +38,6 @@ fun TimelineScreen(viewModel: TimelineViewModel, editorViewModel: com.example.ui
     Column(modifier = Modifier.fillMaxSize().background(com.example.ui.theme.CinemaColors.Page)) {
         TimelineToolbar(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            onImportClick = onImportClick,
             canUndo = uiState.canUndo,
             canRedo = uiState.canRedo,
             onUndo = { viewModel.undo() },
@@ -57,7 +51,6 @@ fun TimelineScreen(viewModel: TimelineViewModel, editorViewModel: com.example.ui
 
         Box(modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)) {
             CineTimelineCanvas(
-                onImportClick = onImportClick,
                 uiState = uiState,
                 playheadFrameFlow = editorViewModel.playheadFrame,
                 isPlaying = isPlaying,

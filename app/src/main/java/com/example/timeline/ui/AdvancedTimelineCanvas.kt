@@ -274,7 +274,10 @@ fun AdvancedTimelineCanvas(
                                     pixelsPerFrame = pixelsPerFrame,
                                     selectedClipIds = uiState.selectedClipIds,
                                     playheadFrame = playheadFrameFlow.value,
-                                    playheadHitRadiusPx = 24.dp.toPx()
+                                    playheadHitRadiusPx = 24.dp.toPx(),
+                                    trimHitRadiusPx = 40.dp.toPx(),
+                                    trackHeightPx = trackHeight,
+                                    trackPaddingPx = trackPadding
                                 )
                                 when (val action = dragAction) {
                                     is TimelineDragAction.MoveClip -> dragGhostStartFrame = action.clip.timelineStart
@@ -379,6 +382,11 @@ fun AdvancedTimelineCanvas(
                                         }
                                     }
                                     onNativeEditCommit(commands, label)
+                                }
+                                when (val completedAction = dragAction) {
+                                    is TimelineDragAction.TrimStart -> onClipSelect(completedAction.clip.id)
+                                    is TimelineDragAction.TrimEnd -> onClipSelect(completedAction.clip.id)
+                                    else -> Unit
                                 }
                                 dragAction = TimelineDragAction.None
                                 dragPreviewProject = null

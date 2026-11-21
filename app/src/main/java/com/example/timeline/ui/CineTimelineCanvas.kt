@@ -38,7 +38,6 @@ private fun actionClipId(action: TimelineDragAction): String? = when (action) {
 
 @Composable
 fun CineTimelineCanvas(
-    onImportClick: () -> Unit = {},
     uiState: TimelineUiState,
     playheadFrameFlow: StateFlow<Long>,
     isPlaying: Boolean,
@@ -280,6 +279,7 @@ fun CineTimelineCanvas(
                                     selectedClipId = uiState.selectedClipId,
                                     playheadFrame = playheadFrameFlow.value,
                                     playheadHitRadiusPx = 24.dp.toPx(),
+                                    trimHitRadiusPx = 40.dp.toPx(),
                                     trackHeightPx = trackHeight,
                                     trackPaddingPx = trackPadding
                                 )
@@ -381,6 +381,11 @@ fun CineTimelineCanvas(
                                         is TimelineDragAction.TrimEnd -> "Trim End"
                                         else -> "Timeline Edit"
                                     })
+                                }
+                                when (val completedAction = dragAction) {
+                                    is TimelineDragAction.TrimStart -> onClipSelected(completedAction.clip.id)
+                                    is TimelineDragAction.TrimEnd -> onClipSelected(completedAction.clip.id)
+                                    else -> Unit
                                 }
                                 dragAction = TimelineDragAction.None
                                 dragPreviewProject = null

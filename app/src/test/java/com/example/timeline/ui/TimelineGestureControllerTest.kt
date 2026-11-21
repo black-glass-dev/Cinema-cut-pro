@@ -15,6 +15,36 @@ import org.junit.Test
 
 class TimelineGestureControllerTest {
     @Test
+    fun trimEdgeHitTargetsAreEasyToReachAndResolveClosestBoundary() {
+        val clip = TimelineClip(
+            id = "clip",
+            trackId = "video-track",
+            mediaId = "media",
+            name = "clip.mp4",
+            sourceIn = 0L,
+            sourceOut = 100L,
+            timelineStart = 10L
+        )
+
+        val leftAction = TimelineGestureController.trimActionAtEdge(
+            clip = clip,
+            tapX = 16f,
+            pixelsPerFrame = 2f,
+            hitRadiusPx = 12f
+        )
+        val rightAction = TimelineGestureController.trimActionAtEdge(
+            clip = clip,
+            tapX = 214f,
+            pixelsPerFrame = 2f,
+            hitRadiusPx = 12f
+        )
+
+        assertTrue(leftAction is TimelineDragAction.TrimStart)
+        assertTrue(rightAction is TimelineDragAction.TrimEnd)
+        assertNull(TimelineGestureController.trimActionAtEdge(clip, 100f, 2f, 12f))
+    }
+
+    @Test
     fun trimDragTargetsClampToLegalTimelineAndKnownSourceBounds() {
         val clip = TimelineClip(
             id = "clip",

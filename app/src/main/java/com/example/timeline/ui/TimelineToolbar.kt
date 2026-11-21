@@ -6,18 +6,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -36,7 +33,6 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun TimelineToolbar(
-    onImportClick: () -> Unit,
     canUndo: Boolean,
     canRedo: Boolean,
     onUndo: () -> Unit,
@@ -81,21 +77,6 @@ fun TimelineToolbar(
                 modifier = Modifier.height(26.dp).padding(horizontal = 2.dp),
                 color = TimelineDesignTokens.Divider
             )
-
-            Button(
-                onClick = onImportClick,
-                shape = RoundedCornerShape(9.dp),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                modifier = Modifier.height(40.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = TimelineDesignTokens.Accent,
-                    contentColor = androidx.compose.ui.graphics.Color.White
-                )
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Import video", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1)
-            }
 
             Button(
                 onClick = onSplit,

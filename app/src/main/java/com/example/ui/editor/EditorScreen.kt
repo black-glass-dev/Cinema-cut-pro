@@ -41,7 +41,6 @@ fun EditorScreen(
     scopeViewModel: ScopeViewModel,
     editorViewModel: EditorViewModel,
     timelinePreviewController: TimelinePreviewController,
-    launchers: com.example.timeline.ui.MediaImportLaunchers,
     onRelinkRequest: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -98,8 +97,6 @@ fun EditorScreen(
             scopeViewModel = scopeViewModel,
             timelinePreviewController = timelinePreviewController,
             editorViewModel = editorViewModel,
-            launchers = launchers,
-            onRelinkRequest = onRelinkRequest,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f - viewportWeight)

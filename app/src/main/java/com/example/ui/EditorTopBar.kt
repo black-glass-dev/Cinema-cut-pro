@@ -83,19 +83,19 @@ fun EditorTopBar(
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 modifier = Modifier.padding(end = 6.dp).height(36.dp)
             ) {
-                Text("Input", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text("Import", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
             Button(
                 onClick = onExportClick,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                 ),
                 shape = RoundedCornerShape(22.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 modifier = Modifier.padding(end = 8.dp).height(36.dp)
             ) {
-                Text("Export", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("Export", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),

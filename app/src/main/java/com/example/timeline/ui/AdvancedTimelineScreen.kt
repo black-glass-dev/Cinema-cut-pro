@@ -78,7 +78,9 @@ fun AdvancedTimelineScreen(
                 onSplit = { timelineViewModel.splitAtPlayhead() },
                 onSplitAndInsertFreezeFrame = {
                     actionScope.launch {
-                        val bitmap = timelinePreviewController.extractCurrentFrameBitmap()
+                        timelineViewModel.pausePlay()
+                        val clipId = uiState.selectedClipId ?: return@launch
+                        val bitmap = timelinePreviewController.extractCurrentFrameBitmap(clipId, playheadFrame)
                         if (bitmap == null) {
                             Toast.makeText(context, "Could not capture the frame at the playhead.", Toast.LENGTH_SHORT).show()
                         } else {
@@ -136,7 +138,8 @@ fun AdvancedTimelineScreen(
                         onBladeCut = { id, frame -> bladeController.handleTap(id, frame, linkedSelection) },
                         onSetGroupLocked = { clipId, locked -> timelineViewModel.setGroupLocked(clipId, locked) },
                         onTrimStartToPlayhead = { trimController.trimSelectedStartToPlayhead() },
-                        onTrimEndToPlayhead = { trimController.trimSelectedEndToPlayhead() }
+                        onTrimEndToPlayhead = { trimController.trimSelectedEndToPlayhead() },
+                        onClipReorderDrop = { id, frame -> timelineViewModel.reorderClipAtFrame(id, frame) }
                     )
 
                     if (showMiniViewport) {

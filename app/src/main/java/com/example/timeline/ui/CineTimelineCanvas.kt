@@ -51,7 +51,8 @@ fun CineTimelineCanvas(
     onSetGroupLocked: (String, Boolean) -> Unit = { _, _ -> },
     onRenameTrack: (String, String) -> Unit = { _, _ -> },
     onDeleteTrack: (String) -> Unit = {},
-    onMoveTrack: (String, Int) -> Unit = { _, _ -> }
+    onMoveTrack: (String, Int) -> Unit = { _, _ -> },
+    onClipReorderDrop: (String, Long) -> Unit = { _, _ -> }
 ) {
     var scrollX by remember { mutableStateOf(0f) }
     var scrollY by remember { mutableStateOf(0f) }
@@ -240,17 +241,6 @@ fun CineTimelineCanvas(
                     .clipToBounds()
                     .pointerInput(pixelsPerFrame, uiState.selectedClipId) {
                         detectTapGestures(
-                            onLongPress = { offset ->
-                                val tapX = offset.x + latestScrollX.value
-                                val tapY = offset.y + latestScrollY.value - rulerHeightPx
-                                val hitClip = TimelineGestureController.hitTest(tapX, tapY, uiState.project, pixelsPerFrame, trackHeight, trackPadding)
-                                if (hitClip != null) {
-                                    onClipSelected(hitClip.id)
-                                    contextMenuClipId = hitClip.id
-                                    contextMenuOffset = IntOffset(offset.x.toInt(), offset.y.toInt())
-                                    contextMenuVisible = true
-                                }
-                            },
                             onTap = { offset ->
                                 contextMenuVisible = false
                                 contextMenuClipId = null
@@ -437,7 +427,22 @@ fun CineTimelineCanvas(
                                         scrollX = scrollX,
                                         viewportWidth = timelineViewportWidth,
                                         frameRate = uiState.project.settings.getFpsRational(),
-                                        modifier = Modifier
+                                        modifier = Modifier.reorderAfterLongPress(
+                                            clip = clip,
+                                            pixelsPerFrame = pixelsPerFrame,
+                                            scrollX = scrollX,
+                                            onClipSelected = { onClipSelected(it) },
+                                            onDrop = { id, frame -> onClipReorderDrop(id, frame) },
+                                            onHold = { id, localX ->
+                                                onClipSelected(id)
+                                                contextMenuClipId = id
+                                                contextMenuOffset = IntOffset(
+                                                    (TimelineUiGeometry.frameToX(clip.timelineStart, pixelsPerFrame) - scrollX + localX).toInt(),
+                                                    (visible.trackIndex * (trackHeight + trackPadding) + rulerHeightPx - scrollY).toInt()
+                                                )
+                                                contextMenuVisible = true
+                                            }
+                                        )
                                     )
                             }
                         }

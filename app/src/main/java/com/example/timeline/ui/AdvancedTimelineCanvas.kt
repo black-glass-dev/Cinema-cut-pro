@@ -60,6 +60,7 @@ fun AdvancedTimelineCanvas(
     onSetGroupLocked: (String, Boolean) -> Unit = { _, _ -> },
     onTrimStartToPlayhead: () -> Unit = {},
     onTrimEndToPlayhead: () -> Unit = {},
+    onClipReorderDrop: (String, Long) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     var scrollX by remember { mutableStateOf(0f) }
@@ -235,17 +236,6 @@ fun AdvancedTimelineCanvas(
                     .clipToBounds()
                     .pointerInput(pixelsPerFrame, uiState.selectedClipId) {
                         detectTapGestures(
-                            onLongPress = { offset ->
-                                val tapX = offset.x + latestScrollX.value
-                                val tapY = offset.y + latestScrollY.value - 40.dp.toPx()
-                                val hitClip = AdvancedTimelineGestureController.hitTest(tapX, tapY, uiState.project, pixelsPerFrame)
-                                if (hitClip != null) {
-                                    onClipSelect(hitClip.id)
-                                    contextMenuClipId = hitClip.id
-                                    contextMenuOffset = IntOffset(offset.x.toInt(), offset.y.toInt())
-                                    contextMenuVisible = true
-                                }
-                            },
                             onTap = { offset ->
                                 contextMenuVisible = false
                                 contextMenuClipId = null
@@ -437,7 +427,22 @@ fun AdvancedTimelineCanvas(
                                         pixelsPerFrame = pixelsPerFrame,
                                         scrollX = scrollX,
                                         viewportWidth = timelineViewportWidth,
-                                        modifier = Modifier
+                                        modifier = Modifier.reorderAfterLongPress(
+                                            clip = clip,
+                                            pixelsPerFrame = pixelsPerFrame,
+                                            scrollX = scrollX,
+                                            onClipSelected = { onClipSelect(it) },
+                                            onDrop = { id, frame -> onClipReorderDrop(id, frame) },
+                                            onHold = { id, localX ->
+                                                onClipSelect(id)
+                                                contextMenuClipId = id
+                                                contextMenuOffset = IntOffset(
+                                                    (TimelineUiGeometry.frameToX(clip.timelineStart, pixelsPerFrame) - scrollX + localX).toInt(),
+                                                    (visible.trackIndex * (trackHeight + trackPadding) + rulerHeightPx - scrollY).toInt()
+                                                )
+                                                contextMenuVisible = true
+                                            }
+                                        )
                                     )
                             }
                         }

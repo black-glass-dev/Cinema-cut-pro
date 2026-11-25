@@ -70,7 +70,9 @@ fun TimelineScreen(
             onSplit = { viewModel.splitAtPlayhead() },
             onSplitAndInsertFreezeFrame = {
                 coroutineScope.launch {
-                    val bitmap = timelinePreviewController.extractCurrentFrameBitmap()
+                    viewModel.pausePlay()
+                    val clipId = uiState.selectedClipId ?: return@launch
+                    val bitmap = timelinePreviewController.extractCurrentFrameBitmap(clipId, playheadFrame)
                     if (bitmap == null) {
                         Toast.makeText(context, "Could not capture the frame at the playhead.", Toast.LENGTH_SHORT).show()
                     } else {
@@ -106,6 +108,7 @@ fun TimelineScreen(
                 },
                 onNativeEditCommit = { commands, label -> viewModel.commitTimelineEdit(commands, label) },
                 onZoomChange = { viewModel.setZoom(it) },
+                onClipReorderDrop = { id, frame -> viewModel.reorderClipAtFrame(id, frame) },
                 onSplit = { viewModel.splitAtPlayhead() },
                 onDelete = { viewModel.deleteSelectedClip(ripple = false) },
                 onSetGroupLocked = { clipId, locked -> viewModel.setGroupLocked(clipId, locked) },

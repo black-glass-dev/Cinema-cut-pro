@@ -641,12 +641,20 @@ class TimelinePreviewController(private val context: Context) {
         }
     }
     
-    suspend fun extractCurrentFrameBitmap(): android.graphics.Bitmap? {
-        val clip = _activeClip.value ?: return null
-        val asset = _activeAsset.value ?: return null
+    /** Extract the selected timeline clip at the requested frame, independent of preview-engine
+     * readiness or a stale active-player clip. This makes freeze-frame editing deterministic. */
+    suspend fun extractCurrentFrameBitmap(clipId: String, timelineFrame: Long): android.graphics.Bitmap? {
+        val project = activeProject ?: return null
+        val clip = project.tracks.asSequence()
+            .filter { it.type == com.example.timeline.core.TrackType.VIDEO && it.isVisible }
+            .flatMap { it.clips.asSequence() }
+            .firstOrNull { it.id == clipId && it.isEnabled && timelineFrame >= it.timelineStart && timelineFrame < it.timelineEnd }
+            ?: return null
+        val asset = project.mediaAssets.firstOrNull { it.assetId == clip.mediaId } ?: return null
+        if (!asset.metadata.hasVideo) return null
         val uriStr = PreviewSourceResolver.resolvePlayableUri(asset, false, forceOriginal = true).first ?: return null
-        val rat = activeProject?.settings?.getFpsRational() ?: return null
-        val sourceFrame = TimelineFrameResolver.resolveSourceFrame(lastPlayheadFrame, clip) ?: return null
+        val rat = project.settings.getFpsRational()
+        val sourceFrame = TimelineFrameResolver.resolveSourceFrame(timelineFrame, clip) ?: return null
         val sourceTimeUs = TimelineFrameResolver.convertFrameToMicroseconds(sourceFrame, rat.numerator, rat.denominator)
             ?: return null
         return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {

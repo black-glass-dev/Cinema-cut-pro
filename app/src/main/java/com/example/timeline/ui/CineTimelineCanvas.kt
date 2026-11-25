@@ -52,7 +52,8 @@ fun CineTimelineCanvas(
     onRenameTrack: (String, String) -> Unit = { _, _ -> },
     onDeleteTrack: (String) -> Unit = {},
     onMoveTrack: (String, Int) -> Unit = { _, _ -> },
-    onClipReorderDrop: (String, Long) -> Unit = { _, _ -> }
+    onClipReorderDrop: (String, Long) -> Unit = { _, _ -> },
+    onTrackLockChange: (String, Boolean) -> Unit = { _, _ -> }
 ) {
     var scrollX by remember { mutableStateOf(0f) }
     var scrollY by remember { mutableStateOf(0f) }
@@ -224,6 +225,7 @@ fun CineTimelineCanvas(
                                 onDelete = { onDeleteTrack(track.id) },
                                 onMoveUp = { onMoveTrack(track.id, index - 1) },
                                 onMoveDown = { onMoveTrack(track.id, index + 1) },
+                                onToggleLock = { onTrackLockChange(track.id, !track.isLocked) },
                                 modifier = Modifier
                                     .height(trackHeightDp + trackPaddingDp)
                                     .padding(bottom = trackPaddingDp)

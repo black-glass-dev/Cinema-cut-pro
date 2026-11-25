@@ -80,13 +80,20 @@ fun AdvancedTimelineScreen(
                     actionScope.launch {
                         timelineViewModel.pausePlay()
                         val clipId = uiState.selectedClipId ?: return@launch
+                        val selectedTrack = uiState.project.tracks.firstOrNull { track -> track.clips.any { it.id == clipId } }
+                        val selectedClip = selectedTrack?.clips?.firstOrNull { it.id == clipId }
+                        if (selectedTrack == null || selectedClip == null) return@launch
+                        if (selectedTrack.isLocked || selectedClip.isLocked || selectedClip.isGroupLocked) {
+                            Toast.makeText(context, "Unlock this track or clip before inserting a freeze frame.", Toast.LENGTH_LONG).show()
+                            return@launch
+                        }
                         val bitmap = timelinePreviewController.extractCurrentFrameBitmap(clipId, playheadFrame)
                         if (bitmap == null) {
-                            Toast.makeText(context, "Could not capture the frame at the playhead.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Could not read this frame from the source or ready proxy. Check the media and playhead position.", Toast.LENGTH_LONG).show()
                         } else {
                             try {
                                 if (!timelineViewModel.splitAndInsertFreezeFrame(bitmap)) {
-                                    Toast.makeText(context, "Move the playhead inside the selected video clip and try again.", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Freeze frame could not be saved. Check the playhead, track lock, and free storage.", Toast.LENGTH_LONG).show()
                                 }
                             } finally {
                                 bitmap.recycle()
@@ -139,7 +146,18 @@ fun AdvancedTimelineScreen(
                         onSetGroupLocked = { clipId, locked -> timelineViewModel.setGroupLocked(clipId, locked) },
                         onTrimStartToPlayhead = { trimController.trimSelectedStartToPlayhead() },
                         onTrimEndToPlayhead = { trimController.trimSelectedEndToPlayhead() },
-                        onClipReorderDrop = { id, frame -> timelineViewModel.reorderClipAtFrame(id, frame) }
+                        onClipReorderDrop = { id, frame ->
+                            val sourceTrack = uiState.project.tracks.firstOrNull { track -> track.clips.any { it.id == id } }
+                            val sourceClip = sourceTrack?.clips?.firstOrNull { it.id == id }
+                            when {
+                                sourceTrack?.isLocked == true -> Toast.makeText(context, "Unlock this track using its lock control before reordering.", Toast.LENGTH_LONG).show()
+                                sourceClip?.isLocked == true || sourceClip?.isGroupLocked == true -> Toast.makeText(context, "Unlock this clip before reordering.", Toast.LENGTH_LONG).show()
+                                else -> {
+                                    timelineViewModel.selectClip(id)
+                                    timelineViewModel.reorderClipAtFrame(id, frame)
+                                }
+                            }
+                        }
                     )
 
                     if (showMiniViewport) {

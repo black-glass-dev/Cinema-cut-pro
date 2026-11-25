@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.sp
 import com.example.timeline.core.TrackType
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Visibility
 
 import androidx.compose.foundation.clickable
@@ -37,6 +38,7 @@ fun LayerHeaderView(
     onDelete: () -> Unit = {},
     onMoveUp: () -> Unit = {},
     onMoveDown: () -> Unit = {},
+    onToggleLock: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -78,7 +80,12 @@ fun LayerHeaderView(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             Icon(Icons.Default.Visibility, contentDescription = "Visible", tint = if (track.isVisible) Color.LightGray else Color.DarkGray, modifier = Modifier.size(14.dp))
-            Icon(Icons.Default.Lock, contentDescription = "Lock", tint = if (track.isLocked) Color.LightGray else Color.DarkGray, modifier = Modifier.size(14.dp))
+            Icon(
+                imageVector = if (track.isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                contentDescription = if (track.isLocked) "Unlock track" else "Lock track",
+                tint = if (track.isLocked) Color.LightGray else Color.DarkGray,
+                modifier = Modifier.size(24.dp).clickable(onClick = onToggleLock).padding(5.dp)
+            )
         }
     }
 }

@@ -658,54 +658,65 @@ class TimelinePreviewController(private val context: Context) {
             ?: return null
         val asset = project.mediaAssets.firstOrNull { it.assetId == clip.mediaId } ?: return null
         if (!asset.metadata.hasVideo) return null
-        val uriStr = PreviewSourceResolver.resolvePlayableUri(asset, false, forceOriginal = true).first ?: return null
+        val isRaw = com.example.timeline.media.MotionCamRawFormat.isMcrawAsset(asset)
+        val originalUri = PreviewSourceResolver.resolvePlayableUri(asset, false, forceOriginal = true).first
+        val previewUri = PreviewSourceResolver.resolvePlayableUri(asset, true, forceOriginal = false).first
+        // Prefer original media for maximum freeze-frame detail. When its URI permission or decoder
+        // is unavailable, retry against the same ready proxy that is already shown in the preview.
+        val sourceUris = (if (isRaw) listOfNotNull(originalUri) else listOfNotNull(originalUri, previewUri)).distinct()
+        if (sourceUris.isEmpty()) return null
         val rat = project.settings.getFpsRational()
         val sourceFrame = TimelineFrameResolver.resolveSourceFrame(timelineFrame, clip) ?: return null
         val sourceTimeUs = TimelineFrameResolver.convertFrameToMicroseconds(sourceFrame, rat.numerator, rat.denominator)
             ?: return null
         return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            if (com.example.timeline.media.MotionCamRawFormat.isMcrawAsset(asset)) {
-                var handle = 0L
-                try {
-                    handle = com.example.timeline.media.NativeMcrawDecoder.open(context, android.net.Uri.parse(uriStr))
-                    val frameCount = com.example.timeline.media.NativeMcrawDecoder.frameCount(handle)
-                    if (frameCount <= 0) return@withContext null
-                    val targetNs = sourceTimeUs.coerceAtLeast(0L).coerceAtMost(Long.MAX_VALUE / 1_000L) * 1_000L
-                    val rawTimestamps = LongArray(frameCount) { index ->
-                        com.example.timeline.media.NativeMcrawDecoder.frameTimestampNs(handle, index)
+            for (uriStr in sourceUris) {
+                val bitmap = if (isRaw) {
+                    var handle = 0L
+                    try {
+                        handle = com.example.timeline.media.NativeMcrawDecoder.open(context, android.net.Uri.parse(uriStr))
+                        val frameCount = com.example.timeline.media.NativeMcrawDecoder.frameCount(handle)
+                        if (frameCount <= 0) null else {
+                            val targetNs = sourceTimeUs.coerceAtLeast(0L).coerceAtMost(Long.MAX_VALUE / 1_000L) * 1_000L
+                            val rawTimestamps = LongArray(frameCount) { index ->
+                                com.example.timeline.media.NativeMcrawDecoder.frameTimestampNs(handle, index)
+                            }
+                            val timestampOrigin = rawTimestamps.firstOrNull() ?: 0L
+                            val timestamps = LongArray(frameCount) { index ->
+                                (rawTimestamps[index] - timestampOrigin).coerceAtLeast(0L)
+                            }
+                            var low = 0
+                            var high = timestamps.lastIndex
+                            while (low < high) {
+                                val middle = (low + high) ushr 1
+                                if (timestamps[middle] < targetNs) low = middle + 1 else high = middle
+                            }
+                            val next = low
+                            val previous = (next - 1).coerceAtLeast(0)
+                            val selected = if (kotlin.math.abs(targetNs - timestamps[previous]) <= kotlin.math.abs(timestamps[next] - targetNs)) previous else next
+                            // Keep the native MotionCam path at up to 4K output resolution. The decoder
+                            // already applies frame rotation, so do not rotate the bitmap again.
+                            com.example.timeline.media.NativeMcrawDecoder.decodeFrame(handle, selected, 3840)
+                        }
+                    } catch (_: Exception) {
+                        null
+                    } finally {
+                        if (handle != 0L) com.example.timeline.media.NativeMcrawDecoder.close(handle)
                     }
-                    val timestampOrigin = rawTimestamps.firstOrNull() ?: 0L
-                    val timestamps = LongArray(frameCount) { index ->
-                        (rawTimestamps[index] - timestampOrigin).coerceAtLeast(0L)
+                } else {
+                    val mmr = android.media.MediaMetadataRetriever()
+                    try {
+                        mmr.setDataSource(context, android.net.Uri.parse(uriStr))
+                        mmr.getFrameAtTime(sourceTimeUs, android.media.MediaMetadataRetriever.OPTION_CLOSEST)
+                    } catch (_: Exception) {
+                        null
+                    } finally {
+                        mmr.release()
                     }
-                    var low = 0
-                    var high = timestamps.lastIndex
-                    while (low < high) {
-                        val middle = (low + high) ushr 1
-                        if (timestamps[middle] < targetNs) low = middle + 1 else high = middle
-                    }
-                    val next = low
-                    val previous = (next - 1).coerceAtLeast(0)
-                    val selected = if (kotlin.math.abs(targetNs - timestamps[previous]) <= kotlin.math.abs(timestamps[next] - targetNs)) previous else next
-                    // The native RAW renderer already applies the MotionCam frame rotation.
-                    // Rotating this extracted bitmap again would double-rotate scope/current-frame output.
-                    com.example.timeline.media.NativeMcrawDecoder.decodeFrame(handle, selected, 960)
-                } catch (_: Exception) {
-                    null
-                } finally {
-                    if (handle != 0L) com.example.timeline.media.NativeMcrawDecoder.close(handle)
                 }
-            } else {
-                val mmr = android.media.MediaMetadataRetriever()
-                try {
-                    mmr.setDataSource(context, android.net.Uri.parse(uriStr))
-                    mmr.getFrameAtTime(sourceTimeUs, android.media.MediaMetadataRetriever.OPTION_CLOSEST)
-                } catch (e: Exception) {
-                    null
-                } finally {
-                    mmr.release()
-                }
+                if (bitmap != null) return@withContext bitmap
             }
+            null
         }
     }
 

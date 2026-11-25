@@ -1101,7 +1101,7 @@ class TimelineViewModel(context: Context) : ViewModel() {
         val track = selected.first
         val clip = selected.second
         val frame = _playheadFrame.value
-        if (track.type != TrackType.VIDEO || track.isLocked || clip.isLocked || !clip.isEnabled ||
+        if (track.type != TrackType.VIDEO || track.isLocked || clip.isLocked || clip.isGroupLocked || !clip.isEnabled ||
             frame <= clip.timelineStart || frame >= clip.timelineEnd
         ) return false
 
@@ -1120,28 +1120,42 @@ class TimelineViewModel(context: Context) : ViewModel() {
         val freezeFile = File(contextRef.filesDir, "freeze_frames/${initialState.project.id}/$freezeId.png")
         val sourceWidth = frameBitmap.width.coerceAtLeast(1)
         val sourceHeight = frameBitmap.height.coerceAtLeast(1)
-        val scale = minOf(1f, 1920f / maxOf(sourceWidth, sourceHeight).toFloat())
-        val freezeWidth = (sourceWidth * scale).toInt().coerceAtLeast(1)
-        val freezeHeight = (sourceHeight * scale).toInt().coerceAtLeast(1)
-        val storedBitmap = if (scale < 1f) {
-            android.graphics.Bitmap.createScaledBitmap(
-                frameBitmap,
-                freezeWidth,
-                freezeHeight,
-                true
-            )
-        } else frameBitmap
-
-        val fileCreated = withContext(Dispatchers.IO) {
-            runCatching {
-                freezeFile.parentFile?.mkdirs()
-                freezeFile.outputStream().use { output ->
-                    check(storedBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output))
-                }
-                freezeFile.isFile && freezeFile.length() > 0L
-            }.getOrDefault(false)
+        // Preserve native 4K detail for freeze PNGs while bounding memory/storage for larger sources.
+        val (freezeWidth, freezeHeight) = FreezeFramePngSizing.targetSize(sourceWidth, sourceHeight)
+        val scale = freezeWidth.toFloat() / sourceWidth.toFloat()
+        val storedBitmap = try {
+            if (scale < 1f) {
+                android.graphics.Bitmap.createScaledBitmap(
+                    frameBitmap,
+                    freezeWidth,
+                    freezeHeight,
+                    true
+                )
+            } else frameBitmap
+        } catch (_: Exception) {
+            freezeFile.delete()
+            return false
+        } catch (_: OutOfMemoryError) {
+            freezeFile.delete()
+            return false
         }
-        if (storedBitmap !== frameBitmap) storedBitmap.recycle()
+
+        val fileCreated = try {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    freezeFile.parentFile?.mkdirs()
+                    freezeFile.outputStream().use { output ->
+                        check(storedBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output))
+                    }
+                    freezeFile.isFile && freezeFile.length() > 0L
+                }.getOrDefault(false)
+            }
+        } catch (cancellation: CancellationException) {
+            freezeFile.delete()
+            throw cancellation
+        } finally {
+            if (storedBitmap !== frameBitmap && !storedBitmap.isRecycled) storedBitmap.recycle()
+        }
         if (!fileCreated) {
             freezeFile.delete()
             return false

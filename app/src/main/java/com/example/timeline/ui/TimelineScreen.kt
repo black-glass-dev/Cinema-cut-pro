@@ -72,13 +72,20 @@ fun TimelineScreen(
                 coroutineScope.launch {
                     viewModel.pausePlay()
                     val clipId = uiState.selectedClipId ?: return@launch
+                    val selectedTrack = uiState.project.tracks.firstOrNull { track -> track.clips.any { it.id == clipId } }
+                    val selectedClip = selectedTrack?.clips?.firstOrNull { it.id == clipId }
+                    if (selectedTrack == null || selectedClip == null) return@launch
+                    if (selectedTrack.isLocked || selectedClip.isLocked || selectedClip.isGroupLocked) {
+                        Toast.makeText(context, "Unlock this track or clip before inserting a freeze frame.", Toast.LENGTH_LONG).show()
+                        return@launch
+                    }
                     val bitmap = timelinePreviewController.extractCurrentFrameBitmap(clipId, playheadFrame)
                     if (bitmap == null) {
-                        Toast.makeText(context, "Could not capture the frame at the playhead.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Could not read this frame from the source or ready proxy. Check the media and playhead position.", Toast.LENGTH_LONG).show()
                     } else {
                         try {
                             if (!viewModel.splitAndInsertFreezeFrame(bitmap)) {
-                                Toast.makeText(context, "Move the playhead inside the selected video clip and try again.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Freeze frame could not be saved. Check the playhead, track lock, and free storage.", Toast.LENGTH_LONG).show()
                             }
                         } finally {
                             bitmap.recycle()
@@ -108,13 +115,25 @@ fun TimelineScreen(
                 },
                 onNativeEditCommit = { commands, label -> viewModel.commitTimelineEdit(commands, label) },
                 onZoomChange = { viewModel.setZoom(it) },
-                onClipReorderDrop = { id, frame -> viewModel.reorderClipAtFrame(id, frame) },
+                onClipReorderDrop = { id, frame ->
+                    val sourceTrack = uiState.project.tracks.firstOrNull { track -> track.clips.any { it.id == id } }
+                    val sourceClip = sourceTrack?.clips?.firstOrNull { it.id == id }
+                    when {
+                        sourceTrack?.isLocked == true -> Toast.makeText(context, "Unlock this track using its lock icon before reordering.", Toast.LENGTH_LONG).show()
+                        sourceClip?.isLocked == true || sourceClip?.isGroupLocked == true -> Toast.makeText(context, "Unlock this clip before reordering.", Toast.LENGTH_LONG).show()
+                        else -> {
+                            viewModel.selectClip(id)
+                            viewModel.reorderClipAtFrame(id, frame)
+                        }
+                    }
+                },
                 onSplit = { viewModel.splitAtPlayhead() },
                 onDelete = { viewModel.deleteSelectedClip(ripple = false) },
                 onSetGroupLocked = { clipId, locked -> viewModel.setGroupLocked(clipId, locked) },
                 onRenameTrack = { id, name -> viewModel.renameTrack(id, name) },
                 onDeleteTrack = { id -> viewModel.deleteTrack(id) },
-                onMoveTrack = { id, index -> viewModel.moveTrack(id, index) }
+                onMoveTrack = { id, index -> viewModel.moveTrack(id, index) },
+                onTrackLockChange = { id, locked -> viewModel.lockTrack(id, locked) }
             )
 
             // Developer debug overlay hidden by default

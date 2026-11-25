@@ -42,7 +42,6 @@ internal fun Modifier.reorderAfterLongPress(
             totalDragY = 0f
             visualDragX = 0f
             isReordering = true
-            onClipSelected(clip.id)
         },
         onDrag = { change, amount ->
             change.consume()
@@ -53,7 +52,7 @@ internal fun Modifier.reorderAfterLongPress(
         onDragEnd = {
             isReordering = false
             visualDragX = 0f
-            if (abs(totalDragX) >= 12f && pixelsPerFrame > 0f) {
+            if (abs(totalDragX) >= 12f && abs(totalDragX) >= abs(totalDragY) && pixelsPerFrame > 0f) {
                 // The clip's local drag coordinates are offset from its timeline origin;
                 // scroll cancels when converting the viewport position back to timeline space.
                 val timelineX = TimelineUiGeometry.frameToX(clip.timelineStart, pixelsPerFrame) +

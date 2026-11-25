@@ -44,11 +44,13 @@ class TimelineClipReorderTest {
     }
 
     @Test
-    fun lockedTrackOrClipCannotBeReordered() {
+    fun lockedOrOverlappingTrackClipsCannotBeReordered() {
         val trackLocked = project(clip("a", 0), clip("b", 10), locked = true)
         val clipLocked = project(clip("a", 0), clip("b", 10).copy(isLocked = true))
+        val overlapping = project(clip("a", 0, 15), clip("b", 10))
 
         assertTrue(TimelineClipReorder.commands(trackLocked, "a", 20).isEmpty())
         assertTrue(TimelineClipReorder.commands(clipLocked, "a", 20).isEmpty())
+        assertTrue(TimelineClipReorder.commands(overlapping, "a", 20).isEmpty())
     }
 }

@@ -430,7 +430,6 @@ fun CineTimelineCanvas(
                                         modifier = Modifier.reorderAfterLongPress(
                                             clip = clip,
                                             pixelsPerFrame = pixelsPerFrame,
-                                            scrollX = scrollX,
                                             onClipSelected = { onClipSelected(it) },
                                             onDrop = { id, frame -> onClipReorderDrop(id, frame) },
                                             onHold = { id, localX ->

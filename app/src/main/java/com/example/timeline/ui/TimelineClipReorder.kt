@@ -21,7 +21,6 @@ import com.example.timeline.core.TimelineClip
 internal fun Modifier.reorderAfterLongPress(
     clip: TimelineClip,
     pixelsPerFrame: Float,
-    scrollX: Float,
     onClipSelected: (String) -> Unit,
     onDrop: (String, Long) -> Unit,
     onHold: (String, Float) -> Unit = { _, _ -> }
@@ -32,7 +31,7 @@ internal fun Modifier.reorderAfterLongPress(
         translationX = if (isReordering) visualDragX else 0f
         scaleX = if (isReordering) 1.025f else 1f
         scaleY = if (isReordering) 1.025f else 1f
-    }.pointerInput(clip.id, pixelsPerFrame, scrollX) {
+    }.pointerInput(clip.id, pixelsPerFrame) {
     var startX = 0f
     var totalDragX = 0f
     var totalDragY = 0f
@@ -80,6 +79,8 @@ internal object TimelineClipReorder {
         if (track.isLocked) return emptyList()
         val original = track.clips.sortedWith(compareBy({ it.timelineStart }, { it.id }))
         if (original.size < 2 || original.any { it.isLocked || it.isGroupLocked }) return emptyList()
+        // Overlapping clips are intentional layer comps, not a simple serial edit list.
+        if (original.zipWithNext().any { (left, right) -> right.timelineStart < left.timelineEnd }) return emptyList()
         val dragged = original.firstOrNull { it.id == clipId } ?: return emptyList()
         val remaining = original.filterNot { it.id == clipId }.toMutableList()
         val insertionIndex = remaining.indexOfFirst { candidate ->

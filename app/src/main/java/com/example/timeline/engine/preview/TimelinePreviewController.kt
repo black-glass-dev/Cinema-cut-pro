@@ -641,6 +641,12 @@ class TimelinePreviewController(private val context: Context) {
         }
     }
     
+    /** Capture the frame currently shown by the preview for scopes and color-sampling callers. */
+    suspend fun extractCurrentFrameBitmap(): android.graphics.Bitmap? {
+        val clip = _activeClip.value ?: return null
+        return extractCurrentFrameBitmap(clip.id, lastPlayheadFrame)
+    }
+
     /** Extract the selected timeline clip at the requested frame, independent of preview-engine
      * readiness or a stale active-player clip. This makes freeze-frame editing deterministic. */
     suspend fun extractCurrentFrameBitmap(clipId: String, timelineFrame: Long): android.graphics.Bitmap? {

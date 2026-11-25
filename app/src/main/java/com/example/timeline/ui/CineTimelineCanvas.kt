@@ -52,7 +52,7 @@ fun CineTimelineCanvas(
     onRenameTrack: (String, String) -> Unit = { _, _ -> },
     onDeleteTrack: (String) -> Unit = {},
     onMoveTrack: (String, Int) -> Unit = { _, _ -> },
-    onClipReorderDrop: (String, Long) -> Unit = { _, _ -> },
+    onClipMoveDrop: (String, Long) -> Unit = { _, _ -> },
     onTrackLockChange: (String, Boolean) -> Unit = { _, _ -> }
 ) {
     var scrollX by remember { mutableStateOf(0f) }
@@ -429,11 +429,11 @@ fun CineTimelineCanvas(
                                         scrollX = scrollX,
                                         viewportWidth = timelineViewportWidth,
                                         frameRate = uiState.project.settings.getFpsRational(),
-                                        modifier = Modifier.reorderAfterLongPress(
+                                        modifier = Modifier.moveAfterLongPress(
                                             clip = clip,
                                             pixelsPerFrame = pixelsPerFrame,
                                             onClipSelected = { onClipSelected(it) },
-                                            onDrop = { id, frame -> onClipReorderDrop(id, frame) },
+                                            onDrop = { id, frame -> onClipMoveDrop(id, frame) },
                                             onHold = { id, localX ->
                                                 onClipSelected(id)
                                                 contextMenuClipId = id

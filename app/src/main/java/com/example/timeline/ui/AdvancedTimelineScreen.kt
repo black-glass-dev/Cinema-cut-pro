@@ -146,15 +146,25 @@ fun AdvancedTimelineScreen(
                         onSetGroupLocked = { clipId, locked -> timelineViewModel.setGroupLocked(clipId, locked) },
                         onTrimStartToPlayhead = { trimController.trimSelectedStartToPlayhead() },
                         onTrimEndToPlayhead = { trimController.trimSelectedEndToPlayhead() },
-                        onClipReorderDrop = { id, frame ->
+                        onClipMoveDrop = { id, frame ->
                             val sourceTrack = uiState.project.tracks.firstOrNull { track -> track.clips.any { it.id == id } }
                             val sourceClip = sourceTrack?.clips?.firstOrNull { it.id == id }
                             when {
-                                sourceTrack?.isLocked == true -> Toast.makeText(context, "Unlock this track using its lock control before reordering.", Toast.LENGTH_LONG).show()
-                                sourceClip?.isLocked == true || sourceClip?.isGroupLocked == true -> Toast.makeText(context, "Unlock this clip before reordering.", Toast.LENGTH_LONG).show()
+                                sourceTrack?.isLocked == true -> Toast.makeText(context, "Unlock this track using its lock control before moving the clip.", Toast.LENGTH_LONG).show()
+                                sourceClip?.isLocked == true || sourceClip?.isGroupLocked == true -> Toast.makeText(context, "Unlock this clip before moving it.", Toast.LENGTH_LONG).show()
                                 else -> {
-                                    timelineViewModel.selectClip(id)
-                                    timelineViewModel.reorderClipAtFrame(id, frame)
+                                    val targetFrame = if (uiState.snapSettings.isSnappingEnabled) {
+                                        TimelineGestureController.snapFrame(
+                                            frame, uiState.project, playheadFrame, uiState.pixelsPerFrame, id,
+                                            uiState.snapSettings.copy(snapThresholdPixels = minOf(uiState.snapSettings.snapThresholdPixels, 2f))
+                                        )
+                                    } else frame
+                                    if (targetFrame == null) {
+                                        Toast.makeText(context, "Could not calculate the clip's drop position. Try turning Snap off.", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        timelineViewModel.selectClip(id)
+                                        timelineViewModel.moveClipToFrame(id, targetFrame)
+                                    }
                                 }
                             }
                         }

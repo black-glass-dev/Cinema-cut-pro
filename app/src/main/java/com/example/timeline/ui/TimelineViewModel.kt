@@ -1238,10 +1238,10 @@ class TimelineViewModel(context: Context) : ViewModel() {
         }
     }
 
-    /** Reorder a clip to the before/after position indicated by the drop frame. */
-    fun reorderClipAtFrame(clipId: String, dropFrame: Long) {
-        val commands = TimelineClipReorder.commands(_uiState.value.project, clipId, dropFrame)
-        if (commands.isNotEmpty()) commitTimelineEdit(commands, "Reorder Clip")
+    /** Commit the exact clip start requested by a long-press drag, as one undoable native move. */
+    fun moveClipToFrame(clipId: String, targetStartFrame: Long) {
+        val commands = TimelineClipMove.commands(_uiState.value.project, clipId, targetStartFrame)
+        if (commands.isNotEmpty()) commitTimelineEdit(commands, "Move Clip")
     }
 
     fun moveSelectedClip(newStartFrame: Long) {

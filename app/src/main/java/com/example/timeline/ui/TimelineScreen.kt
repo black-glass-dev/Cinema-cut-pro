@@ -115,15 +115,25 @@ fun TimelineScreen(
                 },
                 onNativeEditCommit = { commands, label -> viewModel.commitTimelineEdit(commands, label) },
                 onZoomChange = { viewModel.setZoom(it) },
-                onClipReorderDrop = { id, frame ->
+                onClipMoveDrop = { id, frame ->
                     val sourceTrack = uiState.project.tracks.firstOrNull { track -> track.clips.any { it.id == id } }
                     val sourceClip = sourceTrack?.clips?.firstOrNull { it.id == id }
                     when {
-                        sourceTrack?.isLocked == true -> Toast.makeText(context, "Unlock this track using its lock icon before reordering.", Toast.LENGTH_LONG).show()
-                        sourceClip?.isLocked == true || sourceClip?.isGroupLocked == true -> Toast.makeText(context, "Unlock this clip before reordering.", Toast.LENGTH_LONG).show()
+                        sourceTrack?.isLocked == true -> Toast.makeText(context, "Unlock this track using its lock icon before moving the clip.", Toast.LENGTH_LONG).show()
+                        sourceClip?.isLocked == true || sourceClip?.isGroupLocked == true -> Toast.makeText(context, "Unlock this clip before moving it.", Toast.LENGTH_LONG).show()
                         else -> {
-                            viewModel.selectClip(id)
-                            viewModel.reorderClipAtFrame(id, frame)
+                            val targetFrame = if (uiState.snapSettings.isSnappingEnabled) {
+                                TimelineGestureController.snapFrame(
+                                    frame, uiState.project, playheadFrame, uiState.pixelsPerFrame, id,
+                                    uiState.snapSettings.copy(snapThresholdPixels = minOf(uiState.snapSettings.snapThresholdPixels, 2f))
+                                )
+                            } else frame
+                            if (targetFrame == null) {
+                                Toast.makeText(context, "Could not calculate the clip's drop position. Try turning Snap off.", Toast.LENGTH_LONG).show()
+                            } else {
+                                viewModel.selectClip(id)
+                                viewModel.moveClipToFrame(id, targetFrame)
+                            }
                         }
                     }
                 },

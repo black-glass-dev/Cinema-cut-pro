@@ -60,7 +60,7 @@ fun AdvancedTimelineCanvas(
     onSetGroupLocked: (String, Boolean) -> Unit = { _, _ -> },
     onTrimStartToPlayhead: () -> Unit = {},
     onTrimEndToPlayhead: () -> Unit = {},
-    onClipReorderDrop: (String, Long) -> Unit = { _, _ -> },
+    onClipMoveDrop: (String, Long) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     var scrollX by remember { mutableStateOf(0f) }
@@ -427,11 +427,11 @@ fun AdvancedTimelineCanvas(
                                         pixelsPerFrame = pixelsPerFrame,
                                         scrollX = scrollX,
                                         viewportWidth = timelineViewportWidth,
-                                        modifier = Modifier.reorderAfterLongPress(
+                                        modifier = Modifier.moveAfterLongPress(
                                             clip = clip,
                                             pixelsPerFrame = pixelsPerFrame,
                                             onClipSelected = { onClipSelect(it) },
-                                            onDrop = { id, frame -> onClipReorderDrop(id, frame) },
+                                            onDrop = { id, frame -> onClipMoveDrop(id, frame) },
                                             onHold = { id, localX ->
                                                 onClipSelect(id)
                                                 contextMenuClipId = id

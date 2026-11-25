@@ -39,7 +39,7 @@ class TimelineClipReorderTest {
     fun dropOnEitherSideUsesClipMidpointAndNoopProducesNoCommands() {
         val project = project(clip("a", 0), clip("b", 10), clip("c", 20))
 
-        assertEquals(listOf("c", "a"), TimelineClipReorder.commands(project, "c", 4).map { it.clipId })
+        assertEquals(listOf("c", "a", "b"), TimelineClipReorder.commands(project, "c", 4).map { it.clipId })
         assertTrue(TimelineClipReorder.commands(project, "b", 15).isEmpty())
     }
 

@@ -178,13 +178,16 @@ object TimelineGestureController {
         }
         val groupIds = (linkedClipIds + primary.id).distinct().sorted()
         val moveTargetFrame = if (action is TimelineDragAction.MoveClip &&
-            activeTool !in setOf(TimelineTool.SLIP, TimelineTool.SLIDE)
+            activeTool !in setOf(TimelineTool.SLIP, TimelineTool.SLIDE) && groupIds.size > 1
         ) {
             TimelineClipMove.resolveStartFrame(project, primary.id, targetFrame, groupIds.toSet()) ?: return null
         } else targetFrame
         val primaryCommand = previewCommand(action, moveTargetFrame, project, activeTool, rippleScope)
             ?: return null
 
+        if (action is TimelineDragAction.MoveClip && primaryCommand.kind == CoreV2EditKind.MOVE && groupIds.size == 1) {
+            return TimelineClipMove.commands(project, primary.id, moveTargetFrame)
+        }
         if (primaryCommand.kind == CoreV2EditKind.MOVE && groupIds.size > 1) {
             return listOf(primaryCommand.copy(clipIds = groupIds))
         }

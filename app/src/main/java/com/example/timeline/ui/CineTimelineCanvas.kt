@@ -319,7 +319,9 @@ fun CineTimelineCanvas(
                                         val snapped = if (uiState.snapSettings.isSnappingEnabled) {
                                             TimelineGestureController.snapFrame(
                                                 rawStart, uiState.project, playheadFrameFlow.value, pixelsPerFrame,
-                                                action.clip.id, uiState.snapSettings
+                                                action.clip.id, uiState.snapSettings.copy(
+                                                    snapThresholdPixels = minOf(uiState.snapSettings.snapThresholdPixels, 2f)
+                                                )
                                             )
                                         } else rawStart
                                         if (snapped == null) {

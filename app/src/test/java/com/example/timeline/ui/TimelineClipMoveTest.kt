@@ -42,19 +42,35 @@ class TimelineClipMoveTest {
     }
 
     @Test
-    fun moveIntoOccupiedSpaceChoosesNearestLegalGapInDragDirection() {
+    fun movingIntoOccupiedSpacePushesBlockersAndHonorsExactRequestedFrame() {
         val crowdedProject = project(clip("a", 0), clip("b", 10), clip("c", 20))
 
-        val movedRight = TimelineClipMove.commands(crowdedProject, "a", targetStartFrame = 24).single()
+        val movedRight = TimelineClipMove.commands(crowdedProject, "a", targetStartFrame = 24)
         val leftGapProject = project(clip("a", 0), clip("b", 20), clip("c", 30))
-        val movedLeft = TimelineClipMove.commands(leftGapProject, "b", targetStartFrame = 8).single()
+        val movedLeft = TimelineClipMove.commands(leftGapProject, "b", targetStartFrame = 8)
 
-        assertEquals(30L, movedRight.targetFrame)
-        assertEquals(10L, movedLeft.targetFrame)
+        assertEquals(24L, movedRight.last { it.clipId == "a" }.targetFrame)
+        assertEquals(34L, movedRight.last { it.clipId == "c" }.targetFrame)
+        assertEquals(8L, movedLeft.last { it.clipId == "b" }.targetFrame)
+        assertEquals(18L, movedLeft.last { it.clipId == "a" }.targetFrame)
     }
 
     @Test
-    fun normalDragPreviewUsesSameResolvedPositionAsDropCommit() {
+    fun lockedBlockerStaysFixedAndMoveFallsBackToNearestOpenGap() {
+        val lockedProject = project(
+            clip("a", 0),
+            clip("b", 10).copy(isLocked = true),
+            clip("c", 20)
+        )
+
+        val command = TimelineClipMove.commands(lockedProject, "a", targetStartFrame = 24).single()
+
+        assertEquals("a", command.clipId)
+        assertEquals(30L, command.targetFrame)
+    }
+
+    @Test
+    fun normalDragPreviewUsesSameRipplePlanAsDropCommit() {
         val crowdedProject = project(clip("a", 0), clip("b", 10), clip("c", 20))
         val movingClip = crowdedProject.tracks.single().clips.first { it.id == "a" }
 
@@ -63,10 +79,11 @@ class TimelineClipMoveTest {
             targetFrame = 24,
             project = crowdedProject
         )
-        val committedCommand = TimelineClipMove.commands(crowdedProject, "a", 24).single()
+        val committedCommands = TimelineClipMove.commands(crowdedProject, "a", 24)
 
-        assertEquals(30L, previewCommands?.single()?.targetFrame)
-        assertEquals(committedCommand.targetFrame, previewCommands?.single()?.targetFrame)
+        assertEquals(committedCommands, previewCommands)
+        assertEquals(24L, previewCommands?.last { it.clipId == "a" }?.targetFrame)
+        assertEquals(34L, previewCommands?.last { it.clipId == "c" }?.targetFrame)
     }
 
     @Test

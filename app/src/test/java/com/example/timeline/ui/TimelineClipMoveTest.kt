@@ -63,7 +63,7 @@ class TimelineClipMoveTest {
             clip("c", 20)
         )
 
-        val command = TimelineClipMove.commands(lockedProject, "a", targetStartFrame = 24).single()
+        val command = TimelineClipMove.commands(lockedProject, "a", targetStartFrame = 16).single()
 
         assertEquals("a", command.clipId)
         assertEquals(30L, command.targetFrame)

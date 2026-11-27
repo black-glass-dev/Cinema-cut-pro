@@ -30,25 +30,51 @@ class TimelineClipMoveTest {
     }
 
     @Test
-    fun smallDragWithinSameOrderCommitsExactRequestedPosition() {
-        val project = project(clip("a", 0), clip("b", 10), clip("c", 20))
+    fun moveIntoAvailableGapCommitsExactRequestedPosition() {
+        val project = project(clip("a", 0), clip("b", 10), clip("c", 40))
 
-        val command = TimelineClipMove.commands(project, "b", targetStartFrame = 12).single()
+        val command = TimelineClipMove.commands(project, "b", targetStartFrame = 22).single()
 
         assertEquals(CoreV2EditKind.MOVE, command.kind)
         assertEquals("b", command.clipId)
         assertEquals("v1", command.targetTrackId)
-        assertEquals(12L, command.targetFrame)
+        assertEquals(22L, command.targetFrame)
     }
 
     @Test
-    fun draggingAcrossOtherClipsKeepsRequestedStartInsteadOfReturningToOldSlot() {
-        val project = project(clip("a", 0), clip("b", 10), clip("c", 20))
+    fun moveIntoOccupiedSpaceChoosesNearestLegalGapInDragDirection() {
+        val crowdedProject = project(clip("a", 0), clip("b", 10), clip("c", 20))
 
-        val command = TimelineClipMove.commands(project, "a", targetStartFrame = 24).single()
+        val movedRight = TimelineClipMove.commands(crowdedProject, "a", targetStartFrame = 24).single()
+        val leftGapProject = project(clip("a", 0), clip("b", 20), clip("c", 30))
+        val movedLeft = TimelineClipMove.commands(leftGapProject, "b", targetStartFrame = 8).single()
 
-        assertEquals("a", command.clipId)
-        assertEquals(24L, command.targetFrame)
+        assertEquals(30L, movedRight.targetFrame)
+        assertEquals(10L, movedLeft.targetFrame)
+    }
+
+    @Test
+    fun normalDragPreviewUsesSameResolvedPositionAsDropCommit() {
+        val crowdedProject = project(clip("a", 0), clip("b", 10), clip("c", 20))
+        val movingClip = crowdedProject.tracks.single().clips.first { it.id == "a" }
+
+        val previewCommands = TimelineGestureController.previewCommands(
+            action = TimelineDragAction.MoveClip(movingClip, startOffsetFrames = 0),
+            targetFrame = 24,
+            project = crowdedProject
+        )
+        val committedCommand = TimelineClipMove.commands(crowdedProject, "a", 24).single()
+
+        assertEquals(30L, previewCommands?.single()?.targetFrame)
+        assertEquals(committedCommand.targetFrame, previewCommands?.single()?.targetFrame)
+    }
+
+    @Test
+    fun gapResolverClampsToNearestEdgeWithoutJumpingToOldSlot() {
+        val project = project(clip("a", 0), clip("b", 10), clip("c", 20), clip("d", 40))
+
+        assertEquals(20L, TimelineClipMove.resolveStartFrame(project, "c", 18))
+        assertEquals(30L, TimelineClipMove.resolveStartFrame(project, "c", 32))
     }
 
     @Test

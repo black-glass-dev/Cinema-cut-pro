@@ -162,8 +162,16 @@ fun AdvancedTimelineScreen(
                                     if (targetFrame == null) {
                                         Toast.makeText(context, "Could not calculate the clip's drop position. Try turning Snap off.", Toast.LENGTH_LONG).show()
                                     } else {
-                                        timelineViewModel.selectClip(id)
-                                        timelineViewModel.moveClipToFrame(id, targetFrame)
+                                        val legalFrame = TimelineClipMove.resolveStartFrame(uiState.project, id, targetFrame)
+                                        if (legalFrame == null) {
+                                            Toast.makeText(context, "No available position for this clip on the track.", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            if (legalFrame != targetFrame) {
+                                                Toast.makeText(context, "That position is occupied; placed the clip at the nearest open point.", Toast.LENGTH_SHORT).show()
+                                            }
+                                            timelineViewModel.selectClip(id)
+                                            timelineViewModel.moveClipToFrame(id, legalFrame)
+                                        }
                                     }
                                 }
                             }

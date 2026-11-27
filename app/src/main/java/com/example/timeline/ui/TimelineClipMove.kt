@@ -91,13 +91,67 @@ internal object TimelineClipMove {
         return movedStart.coerceAtLeast(0L).coerceAtMost(Long.MAX_VALUE - clipDurationFrames)
     }
 
+    /**
+     * Finds the closest legal start on this track. Native MOVE correctly rejects overlaps; without
+     * resolving them first, that rejection looked like the clip snapping back to its old position.
+     * The gap search keeps the requested frame whenever the clip fits and otherwise clamps to the
+     * nearest gap edge (ties follow the direction of travel).
+     */
+    fun resolveStartFrame(
+        project: TimelineProject,
+        clipId: String,
+        requestedFrame: Long,
+        movingClipIds: Set<String> = setOf(clipId)
+    ): Long? {
+        if (requestedFrame < 0L) return null
+        val track = project.tracks.firstOrNull { candidate -> candidate.clips.any { it.id == clipId } }
+            ?: return null
+        val clip = track.clips.firstOrNull { it.id == clipId } ?: return null
+        if (clip.duration < 0L) return null
+        val maxStart = Long.MAX_VALUE - clip.duration
+        val target = requestedFrame.coerceAtMost(maxStart)
+        if (track.type == com.example.timeline.core.TrackType.TEXT ||
+            track.type == com.example.timeline.core.TrackType.ADJUSTMENT
+        ) return target
+
+        val occupied = track.clips.asSequence()
+            .filter { it.id !in movingClipIds }
+            .mapNotNull { other ->
+                if (other.timelineStart < 0L || other.duration < 0L) return@mapNotNull null
+                val end = try { Math.addExact(other.timelineStart, other.duration) }
+                    catch (_: ArithmeticException) { Long.MAX_VALUE }
+                other.timelineStart to end
+            }
+            .sortedBy { it.first }
+            .toList()
+
+        val candidates = mutableListOf<Long>()
+        var gapStart = 0L
+        for ((occupiedStart, occupiedEnd) in occupied) {
+            val latestStart = occupiedStart - clip.duration
+            if (latestStart >= gapStart) candidates += target.coerceIn(gapStart, latestStart)
+            gapStart = maxOf(gapStart, occupiedEnd)
+        }
+        if (gapStart <= maxStart) candidates += target.coerceAtLeast(gapStart).coerceAtMost(maxStart)
+        if (candidates.isEmpty()) return null
+
+        val originalStart = clip.timelineStart
+        val movingRight = target > originalStart
+        return candidates.minWithOrNull(
+            compareBy<Long> { distanceBetween(it, target) }
+                .thenBy { candidate -> if (movingRight) -candidate else candidate }
+        )
+    }
+
+    private fun distanceBetween(left: Long, right: Long): Long =
+        if (left >= right) left - right else right - left
+
     fun commands(project: TimelineProject, clipId: String, targetStartFrame: Long): List<CoreV2EditCommand> {
-        if (targetStartFrame < 0L) return emptyList()
         val track = project.tracks.firstOrNull { candidate -> candidate.clips.any { it.id == clipId } }
             ?: return emptyList()
         val clip = track.clips.firstOrNull { it.id == clipId } ?: return emptyList()
         if (track.isLocked || clip.isLocked || clip.isGroupLocked) return emptyList()
-        val safeTarget = targetStartFrame.coerceAtMost(Long.MAX_VALUE - clip.duration)
+        val safeTarget = resolveStartFrame(project, clipId, targetStartFrame) ?: return emptyList()
         if (safeTarget == clip.timelineStart) return emptyList()
         return listOf(
             CoreV2EditCommand(

@@ -42,6 +42,7 @@ fun AdvancedTimelineCanvas(
     activeTool: TimelineTool,
     snapEnabled: Boolean,
     linkedSelection: Boolean,
+    multiSelectEnabled: Boolean = false,
     onClipSelect: (String?) -> Unit,
     onNativeEditCommit: (List<CoreV2EditCommand>, String) -> Unit,
     onZoomChange: (Float) -> Unit,
@@ -54,6 +55,7 @@ fun AdvancedTimelineCanvas(
     onDeleteTrack: (String) -> Unit,
     onMoveTrack: (String, Int) -> Unit,
     onPlayheadMoved: (Long) -> Unit,
+    onAddMarkerAtFrame: (Long) -> Unit = {},
     onBladeCut: (String, Long) -> Unit = { _, _ -> },
     onSplit: () -> Unit = {},
     onDelete: () -> Unit = {},
@@ -93,9 +95,12 @@ fun AdvancedTimelineCanvas(
 
     fun updateNativePreview(action: TimelineDragAction, targetFrame: Long) {
         val clipId = actionClipId(action)
-        val linkedIds = if (linkedSelection && clipId != null) {
-            LinkedSelectionController().getLinkedClips(clipId, uiState.project, true)
-        } else emptySet()
+        val linkedIds = buildSet {
+            if (multiSelectEnabled) addAll(uiState.selectedClipIds)
+            if (linkedSelection && clipId != null) {
+                addAll(LinkedSelectionController().getLinkedClips(clipId, uiState.project, true))
+            }
+        }
         val commands = TimelineGestureController.previewCommands(
             action = action,
             targetFrame = targetFrame,
@@ -234,7 +239,7 @@ fun AdvancedTimelineCanvas(
                     .weight(1f)
                     .fillMaxHeight()
                     .clipToBounds()
-                    .pointerInput(pixelsPerFrame, uiState.selectedClipId) {
+                    .pointerInput(pixelsPerFrame, uiState.selectedClipId, activeTool, multiSelectEnabled) {
                         detectTapGestures(
                             onTap = { offset ->
                                 contextMenuVisible = false
@@ -243,7 +248,11 @@ fun AdvancedTimelineCanvas(
                                 val tapY = offset.y + latestScrollY.value - 40.dp.toPx()
                                 val hitClip = AdvancedTimelineGestureController.hitTest(tapX, tapY, uiState.project, pixelsPerFrame)
                                 val frame = TimelineUiGeometry.xToFrame(tapX, pixelsPerFrame)
-                                if (activeTool == TimelineTool.BLADE) {
+                                if (activeTool == TimelineTool.MARKER) {
+                                    val markerFrame = frame.coerceAtLeast(0L)
+                                    onAddMarkerAtFrame(markerFrame)
+                                    onPlayheadMoved(markerFrame)
+                                } else if (activeTool == TimelineTool.BLADE) {
                                     if (hitClip != null) {
                                         onBladeCut(hitClip.id, max(0, frame))
                                     }
@@ -256,7 +265,7 @@ fun AdvancedTimelineCanvas(
                             }
                         )
                     }
-                    .pointerInput(pixelsPerFrame, uiState.selectedClipId) {
+                    .pointerInput(pixelsPerFrame, uiState.selectedClipId, activeTool, snapEnabled, linkedSelection, multiSelectEnabled) {
                         detectDragGestures(
                             onDragStart = { offset ->
                                 isDragging = true
@@ -435,7 +444,7 @@ fun AdvancedTimelineCanvas(
                                             onClipSelected = { onClipSelect(it) },
                                             onDrop = { id, frame -> onClipMoveDrop(id, frame) },
                                             onHold = { id, localX ->
-                                                onClipSelect(id)
+                                                if (!multiSelectEnabled || id !in uiState.selectedClipIds) onClipSelect(id)
                                                 contextMenuClipId = id
                                                 contextMenuOffset = IntOffset(
                                                     (TimelineUiGeometry.frameToX(clip.timelineStart, pixelsPerFrame) - scrollX + localX).toInt(),
@@ -464,7 +473,14 @@ fun AdvancedTimelineCanvas(
                         }
                     }
                 }
-                
+
+                TimelineMarkerOverlay(
+                    markers = uiState.project.markers,
+                    pixelsPerFrame = pixelsPerFrame,
+                    scrollX = scrollX,
+                    rulerHeightPx = rulerHeightPx,
+                    modifier = Modifier.fillMaxSize()
+                )
                 
                 Box(modifier = Modifier.offset { contextMenuOffset }) {
                     TimelineContextMenu(

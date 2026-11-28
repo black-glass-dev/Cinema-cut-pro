@@ -18,7 +18,9 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun AdvancedTimelineToolPalette(
     activeTool: TimelineTool,
-    onToolSelect: (TimelineTool) -> Unit
+    onToolSelect: (TimelineTool) -> Unit,
+    multiSelectEnabled: Boolean = false,
+    onToggleMultiSelect: () -> Unit = {}
 ) {
     Surface(
         color = Color(0xFF222222),
@@ -82,6 +84,12 @@ fun AdvancedTimelineToolPalette(
                 label = "Marker",
                 isActive = activeTool == TimelineTool.MARKER,
                 onClick = { onToolSelect(TimelineTool.MARKER) }
+            )
+            ToolPaletteButton(
+                icon = Icons.Default.Layers,
+                label = "Multi",
+                isActive = multiSelectEnabled,
+                onClick = onToggleMultiSelect
             )
         }
     }

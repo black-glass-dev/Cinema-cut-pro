@@ -38,6 +38,7 @@ fun AdvancedTimelineScreen(
     var activeTool by remember { mutableStateOf(TimelineTool.SELECTION) }
     var snapEnabled by remember { mutableStateOf(uiState.snapSettings.isSnappingEnabled) }
     var linkedSelection by remember { mutableStateOf(true) }
+    var multiSelectEnabled by remember { mutableStateOf(false) }
     val miniViewportController = remember { MiniViewportController() }
     val density = androidx.compose.ui.platform.LocalDensity.current.density
 
@@ -117,7 +118,13 @@ fun AdvancedTimelineScreen(
             Row(modifier = Modifier.weight(1f)) {
                 AdvancedTimelineToolPalette(
                     activeTool = activeTool,
-                    onToolSelect = { activeTool = it }
+                    onToolSelect = { activeTool = it },
+                    multiSelectEnabled = multiSelectEnabled,
+                    onToggleMultiSelect = {
+                        val next = !multiSelectEnabled
+                        multiSelectEnabled = next
+                        if (!next) timelineViewModel.selectClip(uiState.selectedClipId)
+                    }
                 )
 
                 Box(modifier = Modifier.weight(1f)) {
@@ -128,7 +135,20 @@ fun AdvancedTimelineScreen(
                         activeTool = activeTool,
                         snapEnabled = snapEnabled,
                         linkedSelection = linkedSelection,
-                        onClipSelect = { id -> selectionController.handleTap(id) },
+                        multiSelectEnabled = multiSelectEnabled,
+                        onClipSelect = { id ->
+                            if (!multiSelectEnabled) {
+                                selectionController.handleTap(id, linkedSelectionEnabled = linkedSelection)
+                            } else if (id == null) {
+                                timelineViewModel.updateSelection(emptySet())
+                                editorViewModel.selectClip(null)
+                            } else {
+                                val nextSelection = TimelineSelectionState(uiState.selectedClipIds)
+                                    .toggleClip(id).selectedClipIds
+                                timelineViewModel.updateSelection(nextSelection)
+                                editorViewModel.selectClip(nextSelection.firstOrNull())
+                            }
+                        },
                         onNativeEditCommit = { commands, label ->
                             timelineViewModel.commitTimelineEdit(commands, label)
                         },
@@ -142,6 +162,7 @@ fun AdvancedTimelineScreen(
                         onDeleteTrack = { id -> timelineViewModel.deleteTrack(id) },
                         onMoveTrack = { id, index -> timelineViewModel.moveTrack(id, index) },
                         onPlayheadMoved = { frame -> editorViewModel.updatePlayheadFrame(frame); timelineViewModel.setPlayheadFrame(frame) },
+                        onAddMarkerAtFrame = { frame -> timelineViewModel.addMarkerAtFrame(frame) },
                         onBladeCut = { id, frame -> bladeController.handleTap(id, frame, linkedSelection) },
                         onSetGroupLocked = { clipId, locked -> timelineViewModel.setGroupLocked(clipId, locked) },
                         onTrimStartToPlayhead = { trimController.trimSelectedStartToPlayhead() },
@@ -162,15 +183,17 @@ fun AdvancedTimelineScreen(
                                     if (targetFrame == null) {
                                         Toast.makeText(context, "Could not calculate the clip's drop position. Try turning Snap off.", Toast.LENGTH_LONG).show()
                                     } else {
-                                        val legalFrame = TimelineClipMove.resolveStartFrame(uiState.project, id, targetFrame)
-                                        if (legalFrame == null) {
-                                            Toast.makeText(context, "No available position for this clip on the track.", Toast.LENGTH_LONG).show()
+                                        // Preserve the exact requested frame. A multi-selection drop
+                                        // keeps the group intact; a single drop uses the collision
+                                        // planner rather than silently clamping to a nearby gap.
+                                        if (multiSelectEnabled && id in uiState.selectedClipIds) {
+                                            timelineViewModel.moveClipGroup(id, targetFrame, uiState.selectedClipIds)
                                         } else {
-                                            if (legalFrame != targetFrame) {
-                                                Toast.makeText(context, "That position is occupied; placed the clip at the nearest open point.", Toast.LENGTH_SHORT).show()
-                                            }
                                             timelineViewModel.selectClip(id)
-                                            timelineViewModel.moveClipToFrame(id, legalFrame)
+                                            val actualFrame = timelineViewModel.moveClipToFrame(id, targetFrame)
+                                            if (actualFrame != null && actualFrame != targetFrame) {
+                                                Toast.makeText(context, "A locked clip blocked that position; moved to the nearest available frame.", Toast.LENGTH_SHORT).show()
+                                            }
                                         }
                                     }
                                 }

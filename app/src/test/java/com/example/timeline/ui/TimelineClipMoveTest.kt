@@ -87,6 +87,23 @@ class TimelineClipMoveTest {
     }
 
     @Test
+    fun multiSelectedClipsMoveAsOneAtomicGroupCommand() {
+        val groupedProject = project(clip("a", 0), clip("b", 20))
+        val movingClip = groupedProject.tracks.single().clips.first { it.id == "a" }
+
+        val commands = TimelineGestureController.previewCommands(
+            action = TimelineDragAction.MoveClip(movingClip, startOffsetFrames = 0),
+            targetFrame = 30,
+            project = groupedProject,
+            linkedClipIds = setOf("a", "b")
+        )
+
+        assertEquals(1, commands?.size)
+        assertEquals(setOf("a", "b"), commands?.single()?.clipIds?.toSet())
+        assertEquals(30L, commands?.single()?.targetFrame)
+    }
+
+    @Test
     fun gapResolverClampsToNearestEdgeWithoutJumpingToOldSlot() {
         val project = project(clip("a", 0), clip("b", 10), clip("c", 20), clip("d", 40))
 

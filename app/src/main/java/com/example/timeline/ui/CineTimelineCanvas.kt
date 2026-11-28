@@ -466,7 +466,14 @@ fun CineTimelineCanvas(
                         }
                     }
                 }
-                
+
+                TimelineMarkerOverlay(
+                    markers = uiState.project.markers,
+                    pixelsPerFrame = pixelsPerFrame,
+                    scrollX = scrollX,
+                    rulerHeightPx = rulerHeightPx,
+                    modifier = Modifier.fillMaxSize()
+                )
                 
                 Box(modifier = Modifier.offset { contextMenuOffset }) {
                     TimelineContextMenu(

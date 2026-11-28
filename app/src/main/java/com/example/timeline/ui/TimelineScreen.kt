@@ -131,15 +131,12 @@ fun TimelineScreen(
                             if (targetFrame == null) {
                                 Toast.makeText(context, "Could not calculate the clip's drop position. Try turning Snap off.", Toast.LENGTH_LONG).show()
                             } else {
-                                val legalFrame = TimelineClipMove.resolveStartFrame(uiState.project, id, targetFrame)
-                                if (legalFrame == null) {
-                                    Toast.makeText(context, "No available position for this clip on the track.", Toast.LENGTH_LONG).show()
-                                } else {
-                                    if (legalFrame != targetFrame) {
-                                        Toast.makeText(context, "That position is occupied; placed the clip at the nearest open point.", Toast.LENGTH_SHORT).show()
-                                    }
-                                    viewModel.selectClip(id)
-                                    viewModel.moveClipToFrame(id, legalFrame)
+                                // Keep the finger's requested frame; the move planner resolves
+                                // collisions by shifting unlocked clips in the same track.
+                                viewModel.selectClip(id)
+                                val actualFrame = viewModel.moveClipToFrame(id, targetFrame)
+                                if (actualFrame != null && actualFrame != targetFrame) {
+                                    Toast.makeText(context, "A locked clip blocked that position; moved to the nearest available frame.", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         }

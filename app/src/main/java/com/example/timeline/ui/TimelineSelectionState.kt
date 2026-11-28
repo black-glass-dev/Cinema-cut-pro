@@ -6,4 +6,10 @@ data class TimelineSelectionState(
     val dragAction: TimelineDragAction = TimelineDragAction.None
 ) {
     val selectedClipId: String? get() = selectedClipIds.firstOrNull()
+
+    fun toggleClip(clipId: String): TimelineSelectionState = copy(
+        selectedClipIds = if (clipId in selectedClipIds) selectedClipIds - clipId else selectedClipIds + clipId
+    )
+
+    fun clearSelection(): TimelineSelectionState = copy(selectedClipIds = emptySet())
 }

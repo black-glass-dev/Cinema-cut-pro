@@ -1067,14 +1067,18 @@ class TimelineViewModel(context: Context) : ViewModel() {
         }
     }
     
-    fun addMarkerAtPlayhead() {
+    fun addMarkerAtFrame(frame: Long, name: String? = null) {
+        if (frame < 0L) return
         val state = _uiState.value
-        val marker = TimelineMarker(frame = _playheadFrame.value, name = "Marker")
-        val p2 = CoreMarkerEngine.addProjectMarker(state.project, marker)
-        val cmd = SnapshotCommand("Add Marker", state.project, p2, emptyList())
-        historyManager.pushCommand(cmd)
-        updateState(p2)
+        val markerName = name?.trim()?.takeIf { it.isNotEmpty() }
+            ?: "Marker ${state.project.markers.size + 1}"
+        val marker = TimelineMarker(frame = frame, name = markerName)
+        val updated = CoreMarkerEngine.addProjectMarker(state.project, marker)
+        historyManager.pushCommand(SnapshotCommand("Add Marker", state.project, updated, emptyList()))
+        updateState(updated)
     }
+
+    fun addMarkerAtPlayhead() = addMarkerAtFrame(_playheadFrame.value)
 
     fun splitAtPlayhead() {
         val state = _uiState.value
@@ -1238,10 +1242,19 @@ class TimelineViewModel(context: Context) : ViewModel() {
         }
     }
 
-    /** Commit the exact clip start requested by a long-press drag, as one undoable native move. */
-    fun moveClipToFrame(clipId: String, targetStartFrame: Long) {
-        val commands = TimelineClipMove.commands(_uiState.value.project, clipId, targetStartFrame)
-        if (commands.isNotEmpty()) commitTimelineEdit(commands, "Move Clip")
+    /** Commit a long-press move at its requested frame, except when a locked blocker forces fallback. */
+    fun moveClipToFrame(clipId: String, targetStartFrame: Long): Long? {
+        val project = _uiState.value.project
+        val commands = TimelineClipMove.commands(project, clipId, targetStartFrame)
+        if (commands.isEmpty()) return null
+        val outcome = commitNativeTimelineEdits(
+            projectForEdit = project,
+            commands = commands,
+            commandName = "Move Clip",
+            affectedClipIds = commands.mapNotNull { it.clipId }.distinct()
+        )
+        if (outcome !is CoreV2EditOutcome.Applied || outcome.project == project) return null
+        return commands.firstOrNull { it.clipId == clipId }?.targetFrame
     }
 
     fun moveSelectedClip(newStartFrame: Long) {

@@ -273,3 +273,8 @@ Done: corrected the assertion to expect the empty set and added a separate asser
 Evidence: GitHub check annotation `140967827242` names the failing test and line 16; JDK/SDK setup and compile stage completed, but the job stopped before native host tests, APK assembly, and release publication.
 Remaining: corrected JVM suite, full CI, installable APK, and device-side timeline verification are still pending; do not use release #134 as validation for this change because it predates it.
 Next: push this test-only correction with `[publish-test-release]`, verify CI and APK/license checks pass, then share the release URL and checksum for handset testing.
+## 2026-10-10 — Tested APK #136 published
+Done: corrected multi-select assertion passed on retry; Android/Kotlin/native compilation, JVM tests, native host tests, FFmpeg checks, APK assembly, and packaged-license checks all passed in GitHub Actions run `46141890907` for source `4f0147c`.
+Evidence: pre-release `android-test-136-1` contains `Cinema-Cut-Pro-debug-136-1.apk` (90,187,913 bytes), SHA-256 `259d6797abc33130ceed9d53953f2ae65ecaa9254bf7225533b8463da9a67f71`; release https://github.com/black-glass-dev/Cinema-cut-pro/releases/tag/android-test-136-1.
+Remaining: the sandbox cannot download release-assets bytes (request returned EOF); device installation and actual clip positioning/marker/multi-select behavior remain UNVERIFIED until handset testing.
+Next: install APK #136 from the release page, test small clip drags through gaps and collisions (locked and unlocked), and report the exact result/recording so the remaining placement behavior can be confirmed or corrected.

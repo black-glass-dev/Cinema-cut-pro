@@ -267,3 +267,9 @@ Research/evidence: reviewed the supplied 64-second Drive recording and official 
 Evidence: `./tools/gate.sh` exit 2; native export suite PASS, Core v2 host tests PASS (170,624 assertions), C++23 probe PASS, `git diff --check` PASS; CMake/CTest/Ninja gates blocked and Android Gradle tests/build blocked because Java/JAVA_HOME are absent. Log: `docs/evidence/GATE_20261127T115328Z.log`.
 Remaining: no Kotlin/JVM compile, APK, or device verification; requested drop-frame behavior is source/test-covered but still UNVERIFIED on handset. Recording shows import and a selected clip near timeline zero, but not a clearly visible problematic finger-down/drop frame.
 Next: run Gradle/JVM and APK CI with JDK/Android SDK, then verify small drags, unlocked/locked collisions, preview/commit match, marker undo/render, and multi-select group movement on device before claiming fixed.
+## 2026-10-10 — CI selection-test assertion correction
+Failed / root cause: CI run `46141369541` reached JVM tests and identified an incorrect expectation in `TimelineSelectionStateTest`; toggling the already-selected `a` correctly removes it, but the test expected it to remain selected.
+Done: corrected the assertion to expect the empty set and added a separate assertion that toggling `a` from an empty selection selects it; no production behavior changed.
+Evidence: GitHub check annotation `140967827242` names the failing test and line 16; JDK/SDK setup and compile stage completed, but the job stopped before native host tests, APK assembly, and release publication.
+Remaining: corrected JVM suite, full CI, installable APK, and device-side timeline verification are still pending; do not use release #134 as validation for this change because it predates it.
+Next: push this test-only correction with `[publish-test-release]`, verify CI and APK/license checks pass, then share the release URL and checksum for handset testing.

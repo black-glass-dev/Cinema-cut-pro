@@ -13,6 +13,7 @@ class TimelineSelectionStateTest {
         assertEquals(setOf("b"), withB.toggleClip("a").selectedClipIds)
         assertEquals(emptySet<String>(), withB.toggleClip("a").toggleClip("b").selectedClipIds)
         assertEquals(emptySet<String>(), withB.clearSelection().selectedClipIds)
-        assertEquals(setOf("a"), initial.toggleClip("a").selectedClipIds)
+        assertEquals(emptySet<String>(), initial.toggleClip("a").selectedClipIds)
+        assertEquals(setOf("a"), TimelineSelectionState().toggleClip("a").selectedClipIds)
     }
 }
